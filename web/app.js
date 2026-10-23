@@ -134,7 +134,7 @@ function watchApprovedMembers() {
     message("map-message", snapshot.empty ? "No approved members yet." : "");
     $("member-count").textContent = "Live member locations";
   }, (error) => message("map-message", "Could not load members: " + error.message, true));
-  locationUnsub = onSnapshot(query(collection(db, "locations"), where("sharing", "==", true)), (snapshot) => {
+  locationUnsub = onSnapshot(query(collection(db, "locations"), where("sharing", "==", true), where("memberStatus", "==", "approved")), (snapshot) => {
     const liveIds = new Set();
     snapshot.forEach((locationDoc) => {
       const data = locationDoc.data(), uid = locationDoc.id;
@@ -198,8 +198,11 @@ async function watchAdmin() {
 async function reviewMember(uid, status, button) {
   button.disabled = true;
   try {
+    if (status !== "approved") await deleteDoc(doc(db, "locations", uid));
     await updateDoc(doc(db, "members", uid), {
-      status, reviewedAt: serverTimestamp(), reviewedBy: currentUser.uid, updatedAt: serverTimestamp()
+      status,
+      ...(status === "approved" ? {} : { locationSharing: false }),
+      reviewedAt: serverTimestamp(), reviewedBy: currentUser.uid, updatedAt: serverTimestamp()
     });
   } catch (error) {
     alert("Could not update membership: " + error.message);
@@ -237,6 +240,7 @@ function startGpsWatch() {
         lng: position.coords.longitude,
         accuracy: position.coords.accuracy,
         sharing: true,
+        memberStatus: "approved",
         updatedAt: serverTimestamp()
       });
       message("location-message", "Sharing your current location. Updated " + new Date().toLocaleTimeString() + ".");
