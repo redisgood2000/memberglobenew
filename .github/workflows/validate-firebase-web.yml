@@ -1,0 +1,38 @@
+name: Validate Firebase web files
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [firebase-migration]
+    paths:
+      - "web/**"
+      - "firebase.json"
+      - "firestore.rules"
+      - "firestore.indexes.json"
+      - "database.rules.json"
+      - ".github/workflows/validate-firebase-web.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check web JavaScript syntax
+        run: node --input-type=module --check < web/app.js
+      - name: Validate Firebase JSON files
+        run: |
+          python -m json.tool firebase.json > /dev/null
+          python -m json.tool firestore.indexes.json > /dev/null
+          python -m json.tool database.rules.json > /dev/null
+      - name: Verify client config has no service-account credential
+        run: |
+          if grep -E -i 'private_key|client_email|-----BEGIN PRIVATE KEY-----' web/firebase-config.js; then
+            echo "Unexpected private credential detected in web client config."
+            exit 1
+          fi
