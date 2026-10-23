@@ -47,7 +47,7 @@ Google sign-in requires HTTPS (Firebase Hosting supplies it) or localhost. Do no
 
 ## 5. Native Android Firebase config
 
-The native app must use the same Firebase project and the **Web OAuth client ID** generated for Google sign-in as its server client ID. Register Android package `com.memberglobe.nativeapp.test` and the SHA-1 of the exact APK signing certificate in Firebase/Google Cloud. For local development, put project config in your untracked `native-android/local.properties` file (do not commit it):
+The native app uses the same Firebase project and the **Web OAuth client ID** generated for Google sign-in as its server client ID. Its GPS sharing is a manual one-time location refresh; the web dashboard supports live browser GPS updates while the page remains open. Register Android package `com.memberglobe.nativeapp.test` and the SHA-1 of the exact APK signing certificate in Firebase/Google Cloud. For local development, put project config in your untracked `native-android/local.properties` file (do not commit it):
 
 ```properties
 firebaseApiKey=YOUR_VALUE_FROM_FIREBASE
@@ -75,5 +75,5 @@ Firebase Auth users are separate from AppDeploy users. This migration does not a
 
 - Added Firebase Hosting config, Firestore rules/indexes, and a Firebase-powered static web dashboard.
 - Added Google sign-in, pending approval, member profile editing, admin approval, and consent-based live map on web.
-- Native Android Firebase sign-in is the next implementation stage and must be tested with your project's real web client ID, Firebase Android app ID, and signing certificate before it can be considered connected.
+- Native Android Firebase Google sign-in, membership status, one-time opt-in GPS sharing, and a web-dashboard link are implemented; they still require your project's real web client ID, Firebase Android app ID, and matching signing certificate to be tested.
 - No Firebase project credentials were available during this repository edit, so the web app intentionally stays in setup mode until you configure it.
