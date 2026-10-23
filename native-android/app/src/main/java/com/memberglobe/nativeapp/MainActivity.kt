@@ -2,6 +2,7 @@ package com.memberglobe.nativeapp
 
 import android.Manifest
 import android.content.Intent
+import android.net.Uri
 import android.content.pm.PackageManager
 import android.location.Location
 import android.os.Bundle
@@ -168,6 +169,18 @@ class MainActivity : ComponentActivity() {
     private fun snapshotToMap(snapshot: DocumentSnapshot): Map<String, Any?> =
         snapshot.data ?: emptyMap()
 
+    fun openWebDashboard() {
+        if (BuildConfig.FIREBASE_PROJECT_ID.isBlank()) {
+            message = "Set your Firebase project ID before opening the web dashboard."
+            return
+        }
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://${BuildConfig.FIREBASE_PROJECT_ID}.web.app/")))
+        } catch (e: Exception) {
+            message = "Could not open the web dashboard: ${e.message}"
+        }
+    }
+
     fun signOutMember() {
         memberListener?.remove()
         memberListener = null
@@ -254,6 +267,7 @@ class MainActivity : ComponentActivity() {
     companion object { private const val REQUEST_GOOGLE_SIGN_IN = 7341 }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MemberGlobeNativeScreen(activity: MainActivity) {
     val user = activity.auth?.currentUser
@@ -323,6 +337,9 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
                                 style = MaterialTheme.typography.bodySmall)
                         }
                         else -> Text("Membership is not active. Contact your administrator.")
+                    }
+                    OutlinedButton(onClick = { activity.openWebDashboard() }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Open web dashboard, map and admin tools")
                     }
                     OutlinedButton(onClick = { activity.signOutMember() }, modifier = Modifier.fillMaxWidth()) {
                         Text("Sign out")
