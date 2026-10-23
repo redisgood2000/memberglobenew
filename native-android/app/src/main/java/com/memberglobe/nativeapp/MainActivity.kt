@@ -18,6 +18,7 @@ import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialException
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import kotlinx.coroutines.launch
 
@@ -79,10 +80,26 @@ fun MemberGlobeApp() {
                                 val request = GetCredentialRequest.Builder()
                                     .addCredentialOption(googleSignInOption)
                                     .build()
-                                val result = credentialManager.getCredential(
-                                    context = activity!!,
-                                    request = request
-                                )
+                                // Android 14 devices can occasionally fail to surface a
+                                // credential with GetGoogleIdOption. If no credential is offered,
+                                // fall back to the dedicated explicit Google sign-in button flow.
+                                val result = try {
+                                    credentialManager.getCredential(
+                                        context = activity!!,
+                                        request = request
+                                    )
+                                } catch (_: androidx.credentials.exceptions.NoCredentialException) {
+                                    val buttonOption = GetSignInWithGoogleOption.Builder(
+                                        GOOGLE_WEB_CLIENT_ID
+                                    ).build()
+                                    val buttonRequest = GetCredentialRequest.Builder()
+                                        .addCredentialOption(buttonOption)
+                                        .build()
+                                    credentialManager.getCredential(
+                                        context = activity!!,
+                                        request = buttonRequest
+                                    )
+                                }
                                 val credential = result.credential
                                 if (
                                     credential is CustomCredential &&
