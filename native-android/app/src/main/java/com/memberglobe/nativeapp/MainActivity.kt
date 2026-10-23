@@ -1,11 +1,11 @@
 package com.memberglobe.nativeapp
 
-import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Public
@@ -15,12 +15,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInOptions
-import com.google.android.gms.common.api.ApiException
 
-private const val GOOGLE_WEB_CLIENT_ID =
-    "872980250155-d8mldeem6beb9jcjnj54os2amkc73k5q.apps.googleusercontent.com"
+private const val MEMBER_GLOBE_WEB_URL = "https://member-globe-t5uo18.v2.appdeploy.ai/"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -33,27 +29,10 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MemberGlobeApp() {
     val context = LocalContext.current
-    val activity = context as? Activity
-    var notice by remember { mutableStateOf("Sign in with Google to begin.") }
-    var busy by remember { mutableStateOf(false) }
-    var signedInEmail by remember { mutableStateOf<String?>(null) }
-
-    val signInLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        busy = false
-        try {
-            val account = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-                .getResult(ApiException::class.java)
-            signedInEmail = account.email ?: account.id
-            // Do not persist or log the ID token. A verified backend session exchange
-            // must be configured before enabling protected API calls.
-            notice = "Google account selected. Member Globe API sign-in is not complete yet: the backend still needs a supported, verified session exchange."
-        } catch (e: ApiException) {
-            notice = "Google Sign-In failed: statusCode=${e.statusCode}; message=${e.message ?: "no details"}. Please send this exact message."
-        } catch (e: Exception) {
-            notice = "Google Sign-In failed: ${e.javaClass.simpleName}; ${e.message ?: "no details"}"
-        }
+    var notice by remember {
+        mutableStateOf(
+            "Use Member Globe's hosted sign-in so AppDeploy can create and manage your session."
+        )
     }
 
     MaterialTheme {
@@ -72,44 +51,36 @@ fun MemberGlobeApp() {
                 )
                 Text("Member Globe", style = MaterialTheme.typography.headlineMedium)
                 Text(
-                    "Choose your Google account. This test checks Google account sign-in only; member API authentication is not configured yet.",
+                    "Sign in using the official Member Globe website. AppDeploy authentication is handled by the hosted app; this Android app will not treat a Google ID token as an AppDeploy access token.",
                     style = MaterialTheme.typography.bodyLarge
                 )
                 Button(
-                    enabled = !busy && activity != null,
                     onClick = {
-                        val currentActivity = activity
-                        if (currentActivity == null) {
-                            notice = "Cannot start Google Sign-In because the activity is unavailable."
-                        } else {
-                            busy = true
-                            notice = "Opening Google Sign-In…"
-                            val options = GoogleSignInOptions.Builder(
-                                GoogleSignInOptions.DEFAULT_SIGN_IN
+                        try {
+                            val intent = Intent(
+                                Intent.ACTION_VIEW,
+                                Uri.parse(MEMBER_GLOBE_WEB_URL)
                             )
-                                .requestEmail()
-                                .requestIdToken(GOOGLE_WEB_CLIENT_ID)
-                                .build()
-                            val client = GoogleSignIn.getClient(currentActivity, options)
-                            signInLauncher.launch(client.signInIntent)
+                            context.startActivity(intent)
+                            notice = "Opened Member Globe in your browser. Complete sign-in there and use the hosted app for authenticated member features."
+                        } catch (_: ActivityNotFoundException) {
+                            notice = "No browser is available to open Member Globe. Install or enable a browser and try again."
+                        } catch (e: Exception) {
+                            notice = "Could not open Member Globe: ${e.message ?: e.javaClass.simpleName}"
                         }
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(if (busy) "Signing in…" else "Continue with Google")
-                }
-                if (signedInEmail != null) {
-                    Text("Google account selected: $signedInEmail", style = MaterialTheme.typography.bodyMedium)
+                    Text("Open secure Member Globe sign-in")
                 }
                 Text(
                     notice,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (signedInEmail != null) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.error
+                    color = MaterialTheme.colorScheme.primary
                 )
                 Spacer(Modifier.weight(1f))
                 Text(
-                    "This build does not share your location or access member/chat APIs yet. Do not treat Google account selection as a completed Member Globe login.",
+                    "Important: AppDeploy does not currently document a native token-exchange flow for this app. Browser sign-in is supported, but its browser session is not automatically shared with native API calls. Do not enter credentials into an imitation login screen.",
                     style = MaterialTheme.typography.bodySmall
                 )
             }
