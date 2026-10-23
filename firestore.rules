@@ -65,7 +65,7 @@ service cloud.firestore {
         && isApproved(uid)
         && get(/databases/$(database)/documents/members/$(uid)).data.locationSharing == true
         && request.resource.data.keys().hasOnly([
-          'uid', 'lat', 'lng', 'accuracy', 'sharing', 'updatedAt'
+          'uid', 'lat', 'lng', 'accuracy', 'sharing', 'memberStatus', 'updatedAt'
         ])
         && request.resource.data.uid == uid
         && request.resource.data.lat is number
