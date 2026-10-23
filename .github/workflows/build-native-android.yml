@@ -17,21 +17,25 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
+
       # Restore the same debug key between runs for consistent OAuth fingerprints.
       - name: Restore debug signing key
         uses: actions/cache@v4
         with:
           path: ~/.android/debug.keystore
           key: member-globe-native-debug-keystore-v1
+
       - name: Ensure debug signing key exists
         run: |
           mkdir -p "$HOME/.android"
@@ -43,15 +47,29 @@ jobs:
               -keyalg RSA -keysize 2048 -validity 10000 \
               -dname "CN=Android Debug,O=Android,C=US"
           fi
+
       - name: Build debug APK
         working-directory: native-android
         run: gradle --no-daemon assembleDebug
-      - name: Print APK signing certificate SHA-1
+
+      - name: Print keystore certificate SHA-1
         run: |
           keytool -list -v \
             -keystore "$HOME/.android/debug.keystore" \
             -alias androiddebugkey \
             -storepass android -keypass android
+
+      - name: Verify actual APK signing certificate
+        run: |
+          APK="native-android/app/build/outputs/apk/debug/app-debug.apk"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          if [ -z "$APKSIGNER" ]; then
+            echo "ERROR: apksigner was not found under $ANDROID_HOME/build-tools"
+            exit 1
+          fi
+          echo "Using apksigner: $APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
