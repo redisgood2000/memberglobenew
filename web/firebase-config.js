@@ -1,11 +1,10 @@
-// Replace these empty values with the Firebase Web App config from your own Firebase project.
-// These client config values are public identifiers, not service-account secrets.
-// Never put a service-account JSON, private key, or Admin SDK credential in this file.
+// Firebase Web App client configuration for Member Globe.
+// These are public client identifiers; never place service-account credentials here.
 export const firebaseConfig = {
-  apiKey: "",
-  authDomain: "",
-  projectId: "",
-  storageBucket: "",
-  messagingSenderId: "",
-  appId: ""
+  apiKey: "AIzaSyBnF6gA8We7jYHzumzM5CFY2CGRuzJMeE",
+  authDomain: "member-globe-91998.firebaseapp.com",
+  projectId: "member-globe-91998",
+  storageBucket: "member-globe-91998.firebasestorage.app",
+  messagingSenderId: "622920961765",
+  appId: "1:622920961765:web:4d633f7ec36c31dd2ece0c"
 };
