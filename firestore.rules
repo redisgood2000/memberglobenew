@@ -39,7 +39,7 @@ service cloud.firestore {
       allow update: if signedIn() && (
         (isAdmin() &&
           request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['status', 'reviewedAt', 'reviewedBy', 'updatedAt']) &&
+            .hasOnly(['status', 'reviewedAt', 'reviewedBy', 'updatedAt', 'locationSharing']) &&
           request.resource.data.status in ['pending', 'approved', 'rejected', 'suspended'])
         ||
         (request.auth.uid == uid &&
@@ -58,8 +58,8 @@ service cloud.firestore {
       allow get, list: if signedIn() && (
         isAdmin() ||
         (resource.data.sharing == true &&
-         isApproved(request.auth.uid) &&
-         isApproved(uid))
+         resource.data.memberStatus == 'approved' &&
+         isApproved(request.auth.uid))
       );
       allow create, update: if signedIn() && request.auth.uid == uid
         && isApproved(uid)
@@ -72,7 +72,8 @@ service cloud.firestore {
         && request.resource.data.lng is number
         && request.resource.data.lat >= -90 && request.resource.data.lat <= 90
         && request.resource.data.lng >= -180 && request.resource.data.lng <= 180
-        && request.resource.data.sharing == true;
+        && request.resource.data.sharing == true
+        && request.resource.data.memberStatus == 'approved';
       allow delete: if signedIn() && (
         request.auth.uid == uid || isAdmin()
       );
