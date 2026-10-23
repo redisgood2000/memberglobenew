@@ -27,13 +27,13 @@ Choose your own Firebase project when prompted. Review `firestore.rules` before 
 
 ## 3. Create the first admin safely
 
-The app deliberately cannot grant admin privileges to itself. After your own account signs in once and creates `members/{YOUR_UID}`, open Firestore Console and create a document:
+The app deliberately cannot grant admin privileges to itself. For the **first trusted administrator only**, sign in once with Google, then in Firestore Console:
 
-- Collection: `admins`
-- Document ID: your exact Firebase Authentication UID
-- Fields: `role` (string) = `admin`, `createdAt` (timestamp, optional)
+1. Find `members/{YOUR_UID}` and manually change `status` from `pending` to `approved`. This is the one-time bootstrap approval for your own trusted admin account.
+2. Create `admins/{YOUR_UID}` with `role` (string) = `admin` and `createdAt` (timestamp, optional).
+3. Refresh or sign in again. The approved admin can now review other pending accounts in the web dashboard.
 
-Never use an email address as the admin document ID; use the UID shown in Firebase Authentication. Only trusted project owners should create documents in `admins`. Remove this document to revoke admin access.
+Use your exact Firebase Authentication UID as both document IDs, never your email address. Only trusted project owners should create documents in `admins`. Remove the admin document to revoke admin access.
 
 ## 4. Host the web app
 
