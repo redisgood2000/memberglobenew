@@ -4,6 +4,8 @@ import android.app.Activity
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Public
@@ -13,14 +15,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.credentials.CredentialManager
-import androidx.credentials.CustomCredential
-import androidx.credentials.GetCredentialRequest
-import androidx.credentials.exceptions.GetCredentialException
-import com.google.android.libraries.identity.googleid.GetGoogleIdOption
-import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
-import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
-import kotlinx.coroutines.launch
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
 
 private const val GOOGLE_WEB_CLIENT_ID =
     "872980250155-d8mldeem6beb9jcjnj54os2amkc73k5q.apps.googleusercontent.com"
@@ -37,11 +34,27 @@ class MainActivity : ComponentActivity() {
 fun MemberGlobeApp() {
     val context = LocalContext.current
     val activity = context as? Activity
-    val scope = rememberCoroutineScope()
-    val credentialManager = remember { CredentialManager.create(context) }
     var notice by remember { mutableStateOf("Sign in with Google to begin.") }
     var busy by remember { mutableStateOf(false) }
     var signedInEmail by remember { mutableStateOf<String?>(null) }
+
+    val signInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        busy = false
+        try {
+            val account = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+                .getResult(ApiException::class.java)
+            signedInEmail = account.email ?: account.id
+            // Do not persist or log the ID token. A verified backend session exchange
+            // must be configured before enabling protected API calls.
+            notice = "Google account selected. Member Globe API sign-in is not complete yet: the backend still needs a supported, verified session exchange."
+        } catch (e: ApiException) {
+            notice = "Google Sign-In failed: statusCode=${e.statusCode}; message=${e.message ?: "no details"}. Please send this exact message."
+        } catch (e: Exception) {
+            notice = "Google Sign-In failed: ${e.javaClass.simpleName}; ${e.message ?: "no details"}"
+        }
+    }
 
     MaterialTheme {
         Scaffold(topBar = { TopAppBar(title = { Text("Member Globe") }) }) { padding ->
@@ -59,89 +72,26 @@ fun MemberGlobeApp() {
                 )
                 Text("Member Globe", style = MaterialTheme.typography.headlineMedium)
                 Text(
-                    "Choose your Google account. Your Google ID token is kept in memory only and is not logged or saved.",
+                    "Choose your Google account. This test checks Google account sign-in only; member API authentication is not configured yet.",
                     style = MaterialTheme.typography.bodyLarge
                 )
                 Button(
                     enabled = !busy && activity != null,
                     onClick = {
-                        scope.launch {
+                        val currentActivity = activity
+                        if (currentActivity == null) {
+                            notice = "Cannot start Google Sign-In because the activity is unavailable."
+                        } else {
                             busy = true
-                            notice = "Waiting for Google account selection…"
-                            try {
-                                // Use the standard Google ID option and allow accounts that
-                                // have not previously authorized this app. This is an alternative
-                                // Credential Manager flow for diagnosing picker cancellation.
-                                val googleSignInOption = GetGoogleIdOption.Builder()
-                                    .setFilterByAuthorizedAccounts(false)
-                                    .setServerClientId(GOOGLE_WEB_CLIENT_ID)
-                                    .setAutoSelectEnabled(false)
-                                    .build()
-                                val request = GetCredentialRequest.Builder()
-                                    .addCredentialOption(googleSignInOption)
-                                    .build()
-                                // Android 14 devices can occasionally fail to surface a
-                                // credential with GetGoogleIdOption. If no credential is offered,
-                                // fall back to the dedicated explicit Google sign-in button flow.
-                                val result = try {
-                                    notice = "Trying Google account credential…"
-                                    credentialManager.getCredential(
-                                        context = activity!!,
-                                        request = request
-                                    )
-                                } catch (first: GetCredentialException) {
-                                    // Do not silently retry cancellations. Show which flow failed
-                                    // so we can distinguish no credential from authorization cancel.
-                                    if (first !is androidx.credentials.exceptions.NoCredentialException) {
-                                        throw IllegalStateException(
-                                            "Google ID option failed: ${first.javaClass.simpleName}; type=${first.type}; message=${first.message ?: "no details"}",
-                                            first
-                                        )
-                                    }
-                                    notice = "No Google ID credential was offered. Trying the explicit Google sign-in button…"
-                                    val buttonOption = GetSignInWithGoogleOption.Builder(
-                                        GOOGLE_WEB_CLIENT_ID
-                                    ).build()
-                                    val buttonRequest = GetCredentialRequest.Builder()
-                                        .addCredentialOption(buttonOption)
-                                        .build()
-                                    try {
-                                        credentialManager.getCredential(
-                                            context = activity!!,
-                                            request = buttonRequest
-                                        )
-                                    } catch (second: GetCredentialException) {
-                                        throw IllegalStateException(
-                                            "Google ID option returned no credential; explicit Google sign-in failed: ${second.javaClass.simpleName}; type=${second.type}; message=${second.message ?: "no details"}",
-                                            second
-                                        )
-                                    }
-                                }
-                                val credential = result.credential
-                                if (
-                                    credential is CustomCredential &&
-                                    credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
-                                ) {
-                                    val googleCredential =
-                                        GoogleIdTokenCredential.createFrom(credential.data)
-                                    // Do not persist or log the ID token. A verified backend session
-                                    // exchange must be configured before enabling protected API calls.
-                                    signedInEmail = googleCredential.id
-                                    notice = "Google account selected. Member Globe API sign-in is not complete yet: the backend still needs a supported, verified session exchange."
-                                } else {
-                                    notice = "Google returned an unsupported credential type. Please try again."
-                                }
-                            } catch (e: GetCredentialException) {
-                                notice = when (e) {
-                                    is androidx.credentials.exceptions.NoCredentialException ->
-                                        "Google couldn't offer a sign-in credential. Check that Google Play services and your Google account are up to date, then try again. If it repeats, the OAuth Android/Web client configuration needs checking."
-                                    else -> "Google sign-in error: ${e.javaClass.simpleName}; type=${e.type}; message=${e.message ?: "no details"}. Check OAuth configuration and try again."
-                                }
-                            } catch (e: Exception) {
-                                notice = "Google sign-in diagnostic: ${e.message ?: e.javaClass.simpleName}"
-                            } finally {
-                                busy = false
-                            }
+                            notice = "Opening Google Sign-In…"
+                            val options = GoogleSignInOptions.Builder(
+                                GoogleSignInOptions.DEFAULT_SIGN_IN
+                            )
+                                .requestEmail()
+                                .requestIdToken(GOOGLE_WEB_CLIENT_ID)
+                                .build()
+                            val client = GoogleSignIn.getClient(currentActivity, options)
+                            signInLauncher.launch(client.signInIntent)
                         }
                     },
                     modifier = Modifier.fillMaxWidth()
@@ -149,7 +99,7 @@ fun MemberGlobeApp() {
                     Text(if (busy) "Signing in…" else "Continue with Google")
                 }
                 if (signedInEmail != null) {
-                    Text("Google account selected: ${signedInEmail}", style = MaterialTheme.typography.bodyMedium)
+                    Text("Google account selected: $signedInEmail", style = MaterialTheme.typography.bodyMedium)
                 }
                 Text(
                     notice,
