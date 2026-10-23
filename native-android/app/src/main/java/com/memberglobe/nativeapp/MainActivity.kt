@@ -224,6 +224,7 @@ class MainActivity : ComponentActivity() {
                     "lng" to location.longitude,
                     "accuracy" to location.accuracy,
                     "sharing" to true,
+                    "memberStatus" to "approved",
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
                 db.collection("locations").document(user.uid).set(point)
