@@ -13,6 +13,23 @@ android {
         versionCode = 2
         versionName = "0.2.1"
     }
+
+    // Explicitly sign the debug APK with the same cached keystore whose SHA-1
+    // is printed by the GitHub Actions workflow. Do not rely on AGP defaults.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+    buildTypes {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+
     buildFeatures { compose = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
