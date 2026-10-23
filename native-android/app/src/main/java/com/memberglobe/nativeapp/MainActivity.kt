@@ -99,7 +99,7 @@ fun MemberGlobeApp() {
                                 notice = when (e) {
                                     is androidx.credentials.exceptions.NoCredentialException ->
                                         "Google couldn't offer a sign-in credential. Check that Google Play services and your Google account are up to date, then try again. If it repeats, the OAuth Android/Web client configuration needs checking."
-                                    else -> "Google sign-in did not complete (${e.type}). Check your Google OAuth setup and try again."
+                                    else -> "Google sign-in error: ${e.javaClass.simpleName}; type=${e.type}; message=${e.message ?: "no details"}. Check OAuth configuration and try again."
                                 }
                             } catch (_: Exception) {
                                 notice = "Google sign-in failed. Check the OAuth client configuration and try again."
