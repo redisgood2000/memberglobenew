@@ -1,0 +1,14 @@
+# Local Android SDK and Firebase config
+local.properties
+native-android/local.properties
+google-services.json
+**/google-services.json
+service-account*.json
+*serviceAccount*.json
+.env
+.env.*
+node_modules/
+.firebase/
+native-android/.gradle/
+native-android/build/
+native-android/app/build/
