@@ -17,7 +17,7 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialException
-import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import kotlinx.coroutines.launch
 
@@ -68,12 +68,14 @@ fun MemberGlobeApp() {
                             busy = true
                             notice = "Waiting for Google account selection…"
                             try {
-                                // This is an explicit button tap, so use Google's dedicated
-                                // Sign in with Google option rather than the returning-user
-                                // account picker option.
-                                val googleSignInOption = GetSignInWithGoogleOption.Builder(
-                                    GOOGLE_WEB_CLIENT_ID
-                                ).build()
+                                // Use the standard Google ID option and allow accounts that
+                                // have not previously authorized this app. This is an alternative
+                                // Credential Manager flow for diagnosing picker cancellation.
+                                val googleSignInOption = GetGoogleIdOption.Builder()
+                                    .setFilterByAuthorizedAccounts(false)
+                                    .setServerClientId(GOOGLE_WEB_CLIENT_ID)
+                                    .setAutoSelectEnabled(false)
+                                    .build()
                                 val request = GetCredentialRequest.Builder()
                                     .addCredentialOption(googleSignInOption)
                                     .build()
