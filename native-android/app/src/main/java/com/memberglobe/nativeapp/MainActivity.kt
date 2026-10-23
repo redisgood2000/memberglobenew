@@ -84,21 +84,38 @@ fun MemberGlobeApp() {
                                 // credential with GetGoogleIdOption. If no credential is offered,
                                 // fall back to the dedicated explicit Google sign-in button flow.
                                 val result = try {
+                                    notice = "Trying Google account credential…"
                                     credentialManager.getCredential(
                                         context = activity!!,
                                         request = request
                                     )
-                                } catch (_: androidx.credentials.exceptions.NoCredentialException) {
+                                } catch (first: GetCredentialException) {
+                                    // Do not silently retry cancellations. Show which flow failed
+                                    // so we can distinguish no credential from authorization cancel.
+                                    if (first !is androidx.credentials.exceptions.NoCredentialException) {
+                                        throw IllegalStateException(
+                                            "Google ID option failed: ${first.javaClass.simpleName}; type=${first.type}; message=${first.message ?: "no details"}",
+                                            first
+                                        )
+                                    }
+                                    notice = "No Google ID credential was offered. Trying the explicit Google sign-in button…"
                                     val buttonOption = GetSignInWithGoogleOption.Builder(
                                         GOOGLE_WEB_CLIENT_ID
                                     ).build()
                                     val buttonRequest = GetCredentialRequest.Builder()
                                         .addCredentialOption(buttonOption)
                                         .build()
-                                    credentialManager.getCredential(
-                                        context = activity!!,
-                                        request = buttonRequest
-                                    )
+                                    try {
+                                        credentialManager.getCredential(
+                                            context = activity!!,
+                                            request = buttonRequest
+                                        )
+                                    } catch (second: GetCredentialException) {
+                                        throw IllegalStateException(
+                                            "Google ID option returned no credential; explicit Google sign-in failed: ${second.javaClass.simpleName}; type=${second.type}; message=${second.message ?: "no details"}",
+                                            second
+                                        )
+                                    }
                                 }
                                 val credential = result.credential
                                 if (
@@ -120,8 +137,8 @@ fun MemberGlobeApp() {
                                         "Google couldn't offer a sign-in credential. Check that Google Play services and your Google account are up to date, then try again. If it repeats, the OAuth Android/Web client configuration needs checking."
                                     else -> "Google sign-in error: ${e.javaClass.simpleName}; type=${e.type}; message=${e.message ?: "no details"}. Check OAuth configuration and try again."
                                 }
-                            } catch (_: Exception) {
-                                notice = "Google sign-in failed. Check the OAuth client configuration and try again."
+                            } catch (e: Exception) {
+                                notice = "Google sign-in diagnostic: ${e.message ?: e.javaClass.simpleName}"
                             } finally {
                                 busy = false
                             }
