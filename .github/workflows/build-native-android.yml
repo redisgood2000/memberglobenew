@@ -26,9 +26,19 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
+      # Preserve the runner's debug signing key between builds so the APK
+      # signing certificate fingerprint stays stable for Google OAuth setup.
+      - name: Restore debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: member-globe-native-debug-keystore-v1
       - name: Build debug APK
         working-directory: native-android
         run: gradle --no-daemon assembleDebug
+      - name: Print APK signing certificate SHA-1
+        run: |
+          keytool -list -v -keystore "$HOME/.android/debug.keystore" -alias androiddebugkey -storepass android -keypass android | grep -E 'SHA1:|SHA-1:'
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
