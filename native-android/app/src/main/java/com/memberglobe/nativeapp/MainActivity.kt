@@ -1,7 +1,6 @@
 package com.memberglobe.nativeapp
 
-import android.content.Intent
-import android.net.Uri
+import android.app.Activity
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -14,8 +13,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.credentials.CredentialManager
+import androidx.credentials.CustomCredential
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.GetCredentialException
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import kotlinx.coroutines.launch
 
-private const val MEMBER_GLOBE_WEB_URL = "https://member-globe-t5uo18.v2.appdeploy.ai/"
+private const val GOOGLE_WEB_CLIENT_ID =
+    "872980250155-d8mldeem6beb9jcjnj54os2amkc73k5q.apps.googleusercontent.com"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -28,7 +35,12 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MemberGlobeApp() {
     val context = LocalContext.current
-    var notice by remember { mutableStateOf("") }
+    val activity = context as? Activity
+    val scope = rememberCoroutineScope()
+    val credentialManager = remember { CredentialManager.create(context) }
+    var notice by remember { mutableStateOf("Sign in with Google to begin.") }
+    var busy by remember { mutableStateOf(false) }
+    var signedInEmail by remember { mutableStateOf<String?>(null) }
 
     MaterialTheme {
         Scaffold(topBar = { TopAppBar(title = { Text("Member Globe") }) }) { padding ->
@@ -46,34 +58,70 @@ fun MemberGlobeApp() {
                 )
                 Text("Member Globe", style = MaterialTheme.typography.headlineMedium)
                 Text(
-                    "Sign in securely to see your member account and shared locations.",
+                    "Choose your Google account. Your Google ID token is kept in memory only and is not logged or saved.",
                     style = MaterialTheme.typography.bodyLarge
                 )
                 Button(
+                    enabled = !busy && activity != null,
                     onClick = {
-                        try {
-                            context.startActivity(
-                                Intent(Intent.ACTION_VIEW, Uri.parse(MEMBER_GLOBE_WEB_URL))
-                            )
-                        } catch (_: Exception) {
-                            notice = "Could not open the Member Globe website. Check your internet connection."
+                        scope.launch {
+                            busy = true
+                            notice = "Waiting for Google account selection…"
+                            try {
+                                val googleIdOption = GetGoogleIdOption.Builder()
+                                    .setServerClientId(GOOGLE_WEB_CLIENT_ID)
+                                    .setFilterByAuthorizedAccounts(false)
+                                    .build()
+                                val request = GetCredentialRequest.Builder()
+                                    .addCredentialOption(googleIdOption)
+                                    .build()
+                                val result = credentialManager.getCredential(
+                                    context = activity!!,
+                                    request = request
+                                )
+                                val credential = result.credential
+                                if (
+                                    credential is CustomCredential &&
+                                    credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
+                                ) {
+                                    val googleCredential =
+                                        GoogleIdTokenCredential.createFrom(credential.data)
+                                    // Do not persist or log the ID token. A verified backend session
+                                    // exchange must be configured before enabling protected API calls.
+                                    signedInEmail = googleCredential.id
+                                    notice = "Google account selected. Member Globe API sign-in is not complete yet: the backend still needs a supported, verified session exchange."
+                                } else {
+                                    notice = "Google returned an unsupported credential type. Please try again."
+                                }
+                            } catch (e: GetCredentialException) {
+                                notice = when (e.type) {
+                                    "android.credentials.GetCredentialException.TYPE_NO_CREDENTIAL" ->
+                                        "No eligible Google account was found. Add a Google account to this device and try again."
+                                    else -> "Google sign-in did not complete. Check your Google OAuth setup and try again."
+                                }
+                            } catch (_: Exception) {
+                                notice = "Google sign-in failed. Check the OAuth client configuration and try again."
+                            } finally {
+                                busy = false
+                            }
                         }
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Open Member Globe sign-in")
+                    Text(if (busy) "Signing in…" else "Continue with Google")
+                }
+                if (signedInEmail != null) {
+                    Text("Google account selected: ${signedInEmail}", style = MaterialTheme.typography.bodyMedium)
                 }
                 Text(
-                    "Native Google sign-in is not connected yet. This button opens the existing website, where its supported Google sign-in can be used. Signing in there does not yet create a session inside this Android app.",
+                    notice,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error
+                    color = if (signedInEmail != null) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.error
                 )
-                if (notice.isNotBlank()) {
-                    Text(notice, color = MaterialTheme.colorScheme.error)
-                }
                 Spacer(Modifier.weight(1f))
                 Text(
-                    "Your location is not shared by this starter app. Location sharing should be opt-in and visible to authorized members.",
+                    "This build does not share your location or access member/chat APIs yet. Do not treat Google account selection as a completed Member Globe login.",
                     style = MaterialTheme.typography.bodySmall
                 )
             }
