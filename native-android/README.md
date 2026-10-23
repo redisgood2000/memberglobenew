@@ -1,17 +1,28 @@
-# Member Globe — Native Android starter
+# Member Globe — Firebase Android app
 
-This directory is a Kotlin + Jetpack Compose Android starter on a separate branch.
+This Kotlin + Jetpack Compose app is being migrated from AppDeploy to Firebase Authentication and Cloud Firestore.
 
-## Included
-- Native Android Studio/Gradle project
-- Compose sign-in preview and dashboard
-- Global member map, group chat, account, and admin-review placeholder screens
-- Android internet, location, and notification permission declarations
+## Current native features
 
-## Not production-connected yet
-The sign-in button is preview-only. The app does not yet authenticate against the live AppDeploy backend, retrieve real member GPS locations, send chat messages, approve registrations, or receive background push notifications.
+- Google sign-in using Firebase Authentication (requires your Firebase project configuration).
+- Creates a pending member profile after first sign-in.
+- Displays the membership approval status from Firestore.
+- Approved members can opt in to share a one-time current GPS location, refresh it manually, or stop sharing and remove the stored point.
+- Opens the Firebase-hosted web dashboard for profile editing, admin review, and the live global map.
 
-Before production integration, inspect and verify the existing backend's exact auth/session/token flow, API routes, authorization rules, location-sharing consent, and notification setup. Do not put server secrets in the Android app. The existing website's browser session cannot be assumed to work in a native app.
+## Configure before signing in
+
+Follow the root [FIREBASE_SETUP.md](../FIREBASE_SETUP.md). Add your own values to the untracked `local.properties` file in this directory:
+
+```properties
+firebaseApiKey=YOUR_FIREBASE_WEB_API_KEY
+firebaseApplicationId=YOUR_FIREBASE_ANDROID_APP_ID
+firebaseProjectId=YOUR_FIREBASE_PROJECT_ID
+firebaseWebClientId=YOUR_GOOGLE_OAUTH_WEB_CLIENT_ID
+```
+
+These must be copied from your Firebase/Google Cloud project. The web OAuth client ID is used as the Google Sign-In server client ID. Register package `com.memberglobe.nativeapp.test` and the exact signing certificate SHA-1 in Firebase/Google Cloud. Do not commit service-account keys.
 
 ## Build
-Open this directory in Android Studio, sync Gradle, then choose Build > Build APK(s). A GitHub Actions workflow is also included to compile the project and upload a debug APK artifact.
+
+Open this directory in Android Studio and build the debug APK, or use the GitHub Actions workflow on branch `firebase-migration`. The workflow can build in setup mode without project values; Google sign-in remains disabled until real config is supplied.
