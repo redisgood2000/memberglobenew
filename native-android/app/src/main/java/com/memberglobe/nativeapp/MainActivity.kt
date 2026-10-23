@@ -17,7 +17,7 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialException
-import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import kotlinx.coroutines.launch
 
@@ -68,12 +68,14 @@ fun MemberGlobeApp() {
                             busy = true
                             notice = "Waiting for Google account selection…"
                             try {
-                                val googleIdOption = GetGoogleIdOption.Builder()
-                                    .setServerClientId(GOOGLE_WEB_CLIENT_ID)
-                                    .setFilterByAuthorizedAccounts(false)
-                                    .build()
+                                // This is an explicit button tap, so use Google's dedicated
+                                // Sign in with Google option rather than the returning-user
+                                // account picker option.
+                                val googleSignInOption = GetSignInWithGoogleOption.Builder(
+                                    GOOGLE_WEB_CLIENT_ID
+                                ).build()
                                 val request = GetCredentialRequest.Builder()
-                                    .addCredentialOption(googleIdOption)
+                                    .addCredentialOption(googleSignInOption)
                                     .build()
                                 val result = credentialManager.getCredential(
                                     context = activity!!,
@@ -94,10 +96,10 @@ fun MemberGlobeApp() {
                                     notice = "Google returned an unsupported credential type. Please try again."
                                 }
                             } catch (e: GetCredentialException) {
-                                notice = when (e.type) {
-                                    "android.credentials.GetCredentialException.TYPE_NO_CREDENTIAL" ->
-                                        "No eligible Google account was found. Add a Google account to this device and try again."
-                                    else -> "Google sign-in did not complete. Check your Google OAuth setup and try again."
+                                notice = when (e) {
+                                    is androidx.credentials.exceptions.NoCredentialException ->
+                                        "Google couldn't offer a sign-in credential. Check that Google Play services and your Google account are up to date, then try again. If it repeats, the OAuth Android/Web client configuration needs checking."
+                                    else -> "Google sign-in did not complete (${e.type}). Check your Google OAuth setup and try again."
                                 }
                             } catch (_: Exception) {
                                 notice = "Google sign-in failed. Check the OAuth client configuration and try again."
