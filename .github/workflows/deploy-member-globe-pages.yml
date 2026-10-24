@@ -1,0 +1,43 @@
+name: Deploy Member Globe to GitHub Pages
+
+on:
+  push:
+    branches: [firebase-migration]
+    paths:
+      - "web/**"
+      - ".github/workflows/deploy-member-globe-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate web app JavaScript
+        run: node --input-type=module --check < web/app.js
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload web app
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: ./web
+
+      - name: Deploy Member Globe
+        id: deployment
+        uses: actions/deploy-pages@v4
