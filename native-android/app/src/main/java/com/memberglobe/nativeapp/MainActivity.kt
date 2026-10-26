@@ -1,11 +1,19 @@
 package com.memberglobe.nativeapp
 
-import android.content.ActivityNotFoundException
-import android.content.Intent
-import android.net.Uri
+import android.Manifest
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.os.Bundle
+import android.webkit.CookieManager
+import android.webkit.GeolocationPermissions
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -15,7 +23,6 @@ import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.MyLocation
-import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Tune
@@ -36,6 +43,7 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 
 private const val MEMBER_GLOBE_WEB_URL = "https://member-globe-t5uo18.v2.appdeploy.ai/"
+private const val MEMBER_GLOBE_WEB_HOST = "member-globe-t5uo18.v2.appdeploy.ai"
 
 private val Ink = Color(0xFF101C2E)
 private val Blue = Color(0xFF2563EB)
@@ -46,7 +54,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Configuration.getInstance().userAgentValue = packageName
-        setContent { AdminMapScreen() }
+        setContent { MemberGlobeApp() }
     }
 
     override fun onResume() {
@@ -55,22 +63,100 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
-private fun AdminMapScreen() {
-    val context = LocalContext.current
+private fun MemberGlobeApp() {
+    var showPortal by remember { mutableStateOf(false) }
+    BackHandler(enabled = showPortal) { showPortal = false }
+    if (showPortal) EmbeddedAdminPortal(onBack = { showPortal = false })
+    else AdminMapScreen(onOpenPortal = { showPortal = true })
+}
+
+@Composable
+private fun EmbeddedAdminPortal(onBack: () -> Unit) {
+    var webView by remember { mutableStateOf<WebView?>(null) }
+    var pageTitle by remember { mutableStateOf("Admin portal") }
+    var loading by remember { mutableStateOf(true) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    Column(Modifier.fillMaxSize().background(Color.White)) {
+        Surface(color = Color.White, shadowElevation = 3.dp) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) { Icon(Icons.Default.AdminPanelSettings, contentDescription = "Back to map") }
+                Column(Modifier.weight(1f)) {
+                    Text("MEMBER GLOBE", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Muted, letterSpacing = 1.sp)
+                    Text(pageTitle, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Ink, maxLines = 1)
+                }
+                if (loading) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                IconButton(onClick = { loadError = null; loading = true; webView?.reload() }) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Refresh portal")
+                }
+            }
+        }
+        loadError?.let { error ->
+            Surface(color = Color(0xFFFFF4D6), modifier = Modifier.fillMaxWidth()) {
+                Text(error, color = Color(0xFF805A00), modifier = Modifier.padding(12.dp), fontSize = 13.sp)
+            }
+        }
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { ctx ->
+                WebView(ctx).apply {
+                    webView = this
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.databaseEnabled = true
+                    settings.javaScriptCanOpenWindowsAutomatically = false
+                    settings.setSupportMultipleWindows(false)
+                    settings.allowFileAccess = false
+                    settings.allowContentAccess = false
+                    settings.setGeolocationEnabled(true)
+                    CookieManager.getInstance().setAcceptCookie(true)
+                    CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+                    webViewClient = object : WebViewClient() {
+                        override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                            loading = true; loadError = null
+                        }
+                        override fun onPageFinished(view: WebView?, url: String?) {
+                            loading = false
+                            view?.title?.takeIf { it.isNotBlank() }?.let { pageTitle = it }
+                        }
+                        override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: android.webkit.WebResourceError?) {
+                            if (request?.isForMainFrame == true) {
+                                loading = false
+                                loadError = "The portal could not load. Check your internet connection and tap refresh."
+                            }
+                        }
+                        override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                            return request?.url?.scheme != "https"
+                        }
+                    }
+                    webChromeClient = object : WebChromeClient() {
+                        override fun onReceivedTitle(view: WebView?, title: String?) {
+                            title?.takeIf { it.isNotBlank() }?.let { pageTitle = it }
+                        }
+                        override fun onGeolocationPermissionsShowPrompt(origin: String?, callback: GeolocationPermissions.Callback?) {
+                            val host = runCatching { android.net.Uri.parse(origin).host }.getOrNull()
+                            val hasLocationPermission =
+                                ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                                ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                            callback?.invoke(origin, host == MEMBER_GLOBE_WEB_HOST && hasLocationPermission, false)
+                        }
+                    }
+                    loadUrl(MEMBER_GLOBE_WEB_URL)
+                }
+            },
+            update = { webView = it }
+        )
+    }
+    DisposableEffect(Unit) {
+        onDispose { webView?.apply { stopLoading(); destroy() }; webView = null }
+    }
+}
+
+@Composable
+private fun AdminMapScreen(onOpenPortal: () -> Unit) {
     var mapView by remember { mutableStateOf<MapView?>(null) }
     var notice by remember { mutableStateOf("Sign in to the secure portal to manage real member data.") }
-
-    fun openAdminPortal() {
-        try {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(MEMBER_GLOBE_WEB_URL)))
-        } catch (_: ActivityNotFoundException) {
-            notice = "No browser is available. Install or enable a browser and try again."
-        } catch (e: Exception) {
-            notice = "Could not open the admin portal: ${e.message ?: "unknown error"}"
-        }
-    }
 
     MaterialTheme(
         colorScheme = lightColorScheme(
@@ -189,7 +275,7 @@ private fun AdminMapScreen() {
                             Text("Members")
                         }
                         Button(
-                            onClick = { openAdminPortal() },
+                            onClick = onOpenPortal,
                             modifier = Modifier.weight(1.25f),
                             shape = RoundedCornerShape(14.dp),
                             contentPadding = PaddingValues(vertical = 12.dp)
@@ -201,7 +287,7 @@ private fun AdminMapScreen() {
                     }
                     Surface(color = Color(0xFFF1F5F9), shape = RoundedCornerShape(12.dp)) {
                         Row(Modifier.fillMaxWidth().padding(horizontal = 11.dp, vertical = 9.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Icon(Icons.Default.OpenInBrowser, contentDescription = null, tint = Blue, modifier = Modifier.size(17.dp))
+                            Icon(Icons.Default.AdminPanelSettings, contentDescription = null, tint = Blue, modifier = Modifier.size(17.dp))
                             Text(notice, color = Muted, fontSize = 12.sp, lineHeight = 16.sp, modifier = Modifier.weight(1f))
                             IconButton(onClick = { notice = "Sign in to the secure portal to manage real member data." }, modifier = Modifier.size(24.dp)) {
                                 Icon(Icons.Default.Refresh, contentDescription = "Reset message", tint = Muted, modifier = Modifier.size(16.dp))
