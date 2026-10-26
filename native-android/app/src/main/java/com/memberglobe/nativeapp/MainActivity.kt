@@ -69,6 +69,8 @@ class MainActivity : ComponentActivity() {
         private set
     var pendingMembers by mutableStateOf<List<Map<String, Any?>>>(emptyList())
         private set
+    var pendingRequestsError by mutableStateOf("")
+        private set
     private var adminListener: ListenerRegistration? = null
     var message by mutableStateOf("")
     var busy by mutableStateOf(false)
@@ -190,21 +192,51 @@ class MainActivity : ComponentActivity() {
                 adminListener?.remove()
                 adminListener = null
                 pendingMembers = emptyList()
+                pendingRequestsError = ""
                 if (snapshot.exists()) {
                     adminListener = db.collection("members")
                         .whereEqualTo("status", "pending")
                         .addSnapshotListener { pending, error ->
                             if (error != null) {
-                                message = "Admin approvals could not load: ${error.message}"
+                                pendingRequestsError = "Could not load requests: ${error.message ?: "Firestore permission or network error"}"
+                                message = pendingRequestsError
                                 return@addSnapshotListener
                             }
+                            pendingRequestsError = ""
                             pendingMembers = pending?.documents?.map { snapshotToMap(it) + ("documentId" to it.id) } ?: emptyList()
                         }
+                } else {
+                    pendingRequestsError = "Admin access is not configured for this Google account. Create admins/$uid in Firestore, then reopen the app."
+                    message = pendingRequestsError
                 }
             }
             .addOnFailureListener { e ->
                 isAdmin = false
-                message = "Admin access check failed: ${e.message}"
+                pendingRequestsError = "Admin access check failed: ${e.message ?: "Firestore permission or network error"}"
+                message = pendingRequestsError
+            }
+    }
+
+    fun refreshPendingRequests() {
+        val uid = auth?.currentUser?.uid ?: run {
+            pendingRequestsError = "Please sign in again."
+            return
+        }
+        if (!isAdmin) {
+            checkAdminAccess(uid)
+            return
+        }
+        val db = firestore ?: return
+        pendingRequestsError = ""
+        db.collection("members").whereEqualTo("status", "pending").get()
+            .addOnSuccessListener { snapshot ->
+                pendingMembers = snapshot.documents.map { snapshotToMap(it) + ("documentId" to it.id) }
+                pendingRequestsError = ""
+                message = "Requests refreshed: ${pendingMembers.size} pending."
+            }
+            .addOnFailureListener { e ->
+                pendingRequestsError = "Could not refresh requests: ${e.message ?: "Firestore permission or network error"}"
+                message = pendingRequestsError
             }
     }
 
@@ -347,6 +379,7 @@ class MainActivity : ComponentActivity() {
         adminListener = null
         isAdmin = false
         pendingMembers = emptyList()
+        pendingRequestsError = ""
         memberListener?.remove()
         memberListener = null
         detachMapListeners()
@@ -736,17 +769,25 @@ private fun NativeAdminPanel(
             Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text("Membership approvals", style = MaterialTheme.typography.headlineSmall)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Membership approvals", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+                TextButton(onClick = { activity.refreshPendingRequests() }, enabled = !activity.busy) { Text("Refresh") }
+            }
             Text("Only accounts listed in the Firebase admins collection can approve or reject requests.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (activity.message.isNotBlank()) {
+            if (activity.pendingRequestsError.isNotBlank()) {
+                ElevatedCard(Modifier.fillMaxWidth()) {
+                    Text(activity.pendingRequestsError, modifier = Modifier.padding(12.dp),
+                        color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+            } else if (activity.message.isNotBlank()) {
                 Text(activity.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             }
             if (activity.pendingMembers.isEmpty()) {
                 ElevatedCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("No pending requests", style = MaterialTheme.typography.titleMedium)
-                        Text("New Google sign-ups with pending status will appear here automatically.")
+                        Text(if (activity.pendingRequestsError.isBlank()) "No pending requests" else "Requests could not be loaded", style = MaterialTheme.typography.titleMedium)
+                        Text(if (activity.pendingRequestsError.isBlank()) "No member records with status = pending were found. Tap Refresh to check again." else "Read the error above, correct the Firebase access/configuration issue, then tap Refresh.")
                     }
                 }
             } else {
