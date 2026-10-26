@@ -4,11 +4,13 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Location
+import android.location.Geocoder
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
@@ -47,6 +49,7 @@ import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     var auth: FirebaseAuth? = null
@@ -59,6 +62,9 @@ class MainActivity : ComponentActivity() {
         private set
     var approvedMembers by mutableStateOf<Map<String, Map<String, Any?>>>(emptyMap())
         private set
+    var memberAddresses by mutableStateOf<Map<String, String>>(emptyMap())
+        private set
+    private val addressLookupsInProgress = mutableSetOf<String>()
     var isAdmin by mutableStateOf(false)
         private set
     var pendingMembers by mutableStateOf<List<Map<String, Any?>>>(emptyList())
@@ -312,6 +318,30 @@ class MainActivity : ComponentActivity() {
 
     private fun snapshotToMap(snapshot: DocumentSnapshot): Map<String, Any?> = snapshot.data ?: emptyMap()
 
+    fun resolveMemberAddress(uid: String, latitude: Double, longitude: Double) {
+        if (memberAddresses[uid]?.isNotBlank() == true) return
+        synchronized(addressLookupsInProgress) {
+            if (!addressLookupsInProgress.add(uid)) return
+        }
+        Thread {
+            val address = try {
+                if (!Geocoder.isPresent()) null
+                else {
+                    @Suppress("DEPRECATION")
+                    Geocoder(this, Locale.getDefault()).getFromLocation(latitude, longitude, 1)
+                        ?.firstOrNull()?.getAddressLine(0)
+                }
+            } catch (_: Exception) {
+                null
+            }
+            runOnUiThread {
+                synchronized(addressLookupsInProgress) { addressLookupsInProgress.remove(uid) }
+                if (!address.isNullOrBlank()) memberAddresses = memberAddresses + (uid to address)
+                else memberAddresses = memberAddresses + (uid to "Address unavailable")
+            }
+        }.start()
+    }
+
     fun signOutMember() {
         adminListener?.remove()
         adminListener = null
@@ -411,6 +441,7 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
     val overlayAlpha = 0.75f // Fixed at 25% transparency.
     var showProfile by remember { mutableStateOf(false) }
     var showMembersPanel by remember { mutableStateOf(false) }
+    var selectedMemberUid by remember { mutableStateOf<String?>(null) }
     var showAdminPanel by remember { mutableStateOf(false) }
     val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
@@ -428,6 +459,19 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
         val photoUrl = member?.get("photoURL")?.toString()?.takeIf { it.isNotBlank() }
             ?: user?.photoUrl?.toString().orEmpty()
 
+        LaunchedEffect(showMembersPanel, activity.sharedLocations) {
+            if (showMembersPanel) {
+                activity.sharedLocations.forEach { point ->
+                    val uid = point["uid"]?.toString() ?: point["documentId"]?.toString().orEmpty()
+                    val lat = (point["lat"] as? Number)?.toDouble()
+                    val lng = (point["lng"] as? Number)?.toDouble()
+                    if (uid.isNotBlank() && lat != null && lng != null) {
+                        activity.resolveMemberAddress(uid, lat, lng)
+                    }
+                }
+            }
+        }
+
         if (user != null && activity.isAdmin && showAdminPanel) {
             NativeAdminPanel(activity = activity, modifier = Modifier.fillMaxSize(), onBack = { showAdminPanel = false })
         } else if (user != null && status == "approved") {
@@ -436,6 +480,7 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
                 NativeMemberMap(
                     points = activity.sharedLocations,
                     members = activity.approvedMembers,
+                    selectedMemberUid = selectedMemberUid,
                     modifier = Modifier.fillMaxSize()
                 )
 
@@ -553,7 +598,17 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
                                             (it["uid"]?.toString() ?: it["documentId"]?.toString()) == entry.key
                                         }
                                         Row(
-                                            Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                            Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable {
+                                                selectedMemberUid = entry.key
+                                                val locationPoint = activity.sharedLocations.firstOrNull {
+                                                    (it["uid"]?.toString() ?: it["documentId"]?.toString()) == entry.key
+                                                }
+                                                if (locationPoint != null) {
+                                                    val lat = (locationPoint["lat"] as? Number)?.toDouble()
+                                                    val lng = (locationPoint["lng"] as? Number)?.toDouble()
+                                                    if (lat != null && lng != null) activity.resolveMemberAddress(entry.key, lat, lng)
+                                                }
+                                            },
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                                         ) {
@@ -569,6 +624,12 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
                                                 Text(profile["displayName"]?.toString()?.ifBlank { "Member" } ?: "Member",
                                                     style = MaterialTheme.typography.titleSmall, maxLines = 1)
                                                 Text(profile["email"]?.toString().orEmpty(), style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                                                Text(
+                                                    if (!sharing) "Location hidden"
+                                                    else activity.memberAddresses[entry.key] ?: "Finding address…",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    maxLines = 2
+                                                )
                                                 Text(if (sharing) "Sharing location" else "Location hidden",
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = if (sharing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
@@ -735,9 +796,11 @@ private fun NativeAdminPanel(
 private fun NativeMemberMap(
     points: List<Map<String, Any?>>,
     members: Map<String, Map<String, Any?>>,
+    selectedMemberUid: String?,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    var lastZoomedUid by remember { mutableStateOf<String?>(null) }
     val mapView = remember {
         MapView(context).apply {
             setTileSource(TileSourceFactory.MAPNIK)
@@ -774,7 +837,18 @@ private fun NativeMemberMap(
                 map.overlays.add(marker)
             }
             map.invalidate()
-            if (points.size == 1) {
+            if (selectedMemberUid != null && selectedMemberUid != lastZoomedUid) {
+                val selectedPoint = points.firstOrNull { point ->
+                    (point["uid"]?.toString() ?: point["documentId"]?.toString()) == selectedMemberUid
+                }
+                val lat = (selectedPoint?.get("lat") as? Number)?.toDouble()
+                val lng = (selectedPoint?.get("lng") as? Number)?.toDouble()
+                if (lat != null && lng != null && lat in -90.0..90.0 && lng in -180.0..180.0) {
+                    map.controller.setZoom(17.0)
+                    map.controller.animateTo(GeoPoint(lat, lng))
+                    lastZoomedUid = selectedMemberUid
+                }
+            } else if (points.size == 1) {
                 val p = points.first()
                 val lat = (p["lat"] as? Number)?.toDouble()
                 val lng = (p["lng"] as? Number)?.toDouble()
