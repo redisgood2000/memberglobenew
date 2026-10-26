@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.LocationOff
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -405,8 +406,9 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
     val member = activity.member
     val context = LocalContext.current
     var menuExpanded by remember { mutableStateOf(false) }
-    var overlayAlpha by remember { mutableFloatStateOf(0.88f) }
+    val overlayAlpha = 0.75f // Fixed at 25% transparency.
     var showProfile by remember { mutableStateOf(false) }
+    var showMembersPanel by remember { mutableStateOf(false) }
     var showAdminPanel by remember { mutableStateOf(false) }
     val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
@@ -452,6 +454,9 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
                             Text("Member Globe", style = MaterialTheme.typography.titleMedium)
                             Text("${activity.sharedLocations.size} member location(s) shared", style = MaterialTheme.typography.bodySmall)
                         }
+                        IconButton(onClick = { showMembersPanel = !showMembersPanel }) {
+                            Icon(Icons.Default.Groups, contentDescription = "Open member list")
+                        }
                         Box {
                             IconButton(onClick = { menuExpanded = true }) { Text("☰", style = MaterialTheme.typography.headlineSmall) }
                             DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
@@ -461,17 +466,6 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
                                     leadingIcon = { Icon(Icons.Default.AccountCircle, contentDescription = null) }
                                 )
                                 HorizontalDivider()
-                                Text("Map overlay transparency", modifier = Modifier.padding(start = 16.dp, top = 8.dp),
-                                    style = MaterialTheme.typography.labelMedium)
-                                Slider(
-                                    value = overlayAlpha,
-                                    onValueChange = { overlayAlpha = it },
-                                    valueRange = 0.25f..1.0f,
-                                    modifier = Modifier.padding(horizontal = 12.dp)
-                                )
-                                Text("${(overlayAlpha * 100).toInt()}% opacity",
-                                    modifier = Modifier.padding(start = 16.dp, bottom = 8.dp),
-                                    style = MaterialTheme.typography.bodySmall)
                                 if (activity.isAdmin) {
                                     DropdownMenuItem(
                                         text = { Text("Native admin panel (${activity.pendingMembers.size} pending)") },
@@ -487,108 +481,117 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
                     }
                 }
 
-                Column(
-                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                // Compact floating actions: only the GPS icon is shown for location sharing.
+                val isSharingLocation = member?.get("locationSharing") == true
+                FloatingActionButton(
+                    onClick = {
+                        if (isSharingLocation) activity.stopLocationSharing()
+                        else {
+                            val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                            val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                            if (fine || coarse) activity.shareCurrentLocation()
+                            else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+                        }
+                    },
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(18.dp).size(54.dp),
+                    containerColor = if (isSharingLocation) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+                    contentColor = if (isSharingLocation) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                    elevation = FloatingActionButtonDefaults.elevation(6.dp)
                 ) {
-                    if (activity.message.isNotBlank()) {
-                        Surface(
-                            shape = MaterialTheme.shapes.large,
-                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-                            tonalElevation = 3.dp
-                        ) {
-                            Text(activity.message, modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
-                                style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-                    if (showProfile) {
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = MaterialTheme.shapes.large,
-                            color = MaterialTheme.colorScheme.surface.copy(alpha = overlayAlpha),
-                            tonalElevation = 4.dp
-                        ) {
-                            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text("My profile", style = MaterialTheme.typography.titleMedium)
-                                Text(displayName)
-                                Text(email, style = MaterialTheme.typography.bodySmall)
-                                Text("Membership: Approved", style = MaterialTheme.typography.labelMedium)
-                            }
-                        }
-                    }
+                    Icon(
+                        imageVector = if (isSharingLocation) Icons.Default.LocationOn else Icons.Default.LocationOff,
+                        contentDescription = if (isSharingLocation) "Turn GPS sharing off" else "Turn GPS sharing on",
+                        modifier = Modifier.size(27.dp)
+                    )
+                }
+
+                if (showProfile) {
                     Surface(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp),
+                        shape = MaterialTheme.shapes.large,
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = overlayAlpha),
+                        tonalElevation = 4.dp
+                    ) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("My profile", style = MaterialTheme.typography.titleMedium)
+                            Text(displayName)
+                            Text(email, style = MaterialTheme.typography.bodySmall)
+                            Text("Membership: Approved", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
+
+                if (showMembersPanel) {
+                    Surface(
+                        modifier = Modifier.align(Alignment.CenterStart).fillMaxWidth(0.88f).padding(start = 10.dp, top = 74.dp, bottom = 80.dp),
                         shape = MaterialTheme.shapes.extraLarge,
                         color = MaterialTheme.colorScheme.surface.copy(alpha = overlayAlpha),
-                        tonalElevation = 6.dp,
-                        shadowElevation = 6.dp
+                        tonalElevation = 8.dp,
+                        shadowElevation = 8.dp
                     ) {
-                        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                if (photoUrl.isNotBlank()) {
-                                    AsyncImage(model = photoUrl, contentDescription = "Google profile photo",
-                                        modifier = Modifier.size(42.dp).clip(CircleShape), contentScale = ContentScale.Crop)
-                                } else {
-                                    Icon(Icons.Default.AccountCircle, contentDescription = "Profile",
-                                        modifier = Modifier.size(42.dp), tint = MaterialTheme.colorScheme.primary)
-                                }
-                                Column(Modifier.weight(1f)) {
-                                    Text(displayName, style = MaterialTheme.typography.titleSmall)
-                                    Text(email, style = MaterialTheme.typography.bodySmall, maxLines = 1)
-                                }
-                                Text("LIVE MAP", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("Members", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                                Text("${activity.approvedMembers.size}", style = MaterialTheme.typography.titleMedium)
+                                IconButton(onClick = { showMembersPanel = false }) { Text("✕") }
                             }
-                            val isSharingLocation = member?.get("locationSharing") == true
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                FilledTonalIconButton(
-                                    onClick = {
-                                        if (isSharingLocation) {
-                                            activity.stopLocationSharing()
-                                        } else {
-                                            val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-                                            val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-                                            if (fine || coarse) activity.shareCurrentLocation()
-                                            else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
-                                        }
-                                    },
-                                    enabled = !activity.busy,
-                                    modifier = Modifier.size(54.dp)
+                            HorizontalDivider()
+                            if (activity.approvedMembers.isEmpty()) {
+                                Text("No approved members found.", style = MaterialTheme.typography.bodyMedium)
+                            } else {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth().heightIn(max = 430.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Icon(
-                                        imageVector = if (isSharingLocation) Icons.Default.LocationOn else Icons.Default.LocationOff,
-                                        contentDescription = if (isSharingLocation) "Turn location sharing off" else "Turn location sharing on",
-                                        modifier = Modifier.size(28.dp),
-                                        tint = if (isSharingLocation) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                    activity.approvedMembers.entries.sortedBy {
+                                        it.value["displayName"]?.toString()?.lowercase().orEmpty()
+                                    }.forEach { entry ->
+                                        val profile = entry.value
+                                        val sharing = activity.sharedLocations.any {
+                                            (it["uid"]?.toString() ?: it["documentId"]?.toString()) == entry.key
+                                        }
+                                        Row(
+                                            Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                        ) {
+                                            val photo = profile["photoURL"]?.toString().orEmpty()
+                                            if (photo.isNotBlank()) {
+                                                AsyncImage(model = photo, contentDescription = "Member profile photo",
+                                                    modifier = Modifier.size(38.dp).clip(CircleShape), contentScale = ContentScale.Crop)
+                                            } else {
+                                                Icon(Icons.Default.AccountCircle, contentDescription = null,
+                                                    modifier = Modifier.size(38.dp), tint = MaterialTheme.colorScheme.primary)
+                                            }
+                                            Column(Modifier.weight(1f)) {
+                                                Text(profile["displayName"]?.toString()?.ifBlank { "Member" } ?: "Member",
+                                                    style = MaterialTheme.typography.titleSmall, maxLines = 1)
+                                                Text(profile["email"]?.toString().orEmpty(), style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                                                Text(if (sharing) "Sharing location" else "Location hidden",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = if (sharing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                            Box(Modifier.size(9.dp).clip(CircleShape).background(
+                                                if (sharing) Color(0xFF16A34A) else Color(0xFF94A3B8)
+                                            ))
+                                        }
+                                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                                    }
                                 }
-                                Column(Modifier.weight(1f)) {
-                                    Text(
-                                        if (isSharingLocation) "GPS sharing is ON" else "GPS sharing is OFF",
-                                        style = MaterialTheme.typography.titleSmall
-                                    )
-                                    Text(
-                                        if (isSharingLocation) "Your location is shared with approved members." else "Your location is hidden from the map.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                OutlinedButton(
-                                    onClick = {
-                                        val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-                                        val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-                                        if (fine || coarse) activity.shareCurrentLocation()
-                                        else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
-                                    },
-                                    enabled = !activity.busy && isSharingLocation
-                                ) { Text(if (activity.busy) "Updating…" else "Update GPS") }
                             }
-                            Text("Tap the location icon to turn sharing on or off. GPS updates only when you turn it on or tap Update GPS; background tracking is not enabled.",
-                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
+                    }
+                }
+
+                if (activity.message.isNotBlank()) {
+                    Surface(
+                        modifier = Modifier.align(Alignment.BottomCenter).padding(start = 12.dp, end = 82.dp, bottom = 12.dp),
+                        shape = MaterialTheme.shapes.large,
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                        tonalElevation = 3.dp
+                    ) {
+                        Text(activity.message, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            style = MaterialTheme.typography.bodySmall, maxLines = 3)
                     }
                 }
             }
