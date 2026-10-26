@@ -624,6 +624,87 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
 }
 
 @Composable
+private fun NativeAdminPanel(
+    activity: MainActivity,
+    modifier: Modifier = Modifier,
+    onBack: () -> Unit
+) {
+    Scaffold(
+        modifier = modifier,
+        topBar = {
+            TopAppBar(
+                title = { Text("Admin panel") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) { Text("←", style = MaterialTheme.typography.titleLarge) }
+                },
+                actions = {
+                    Text("${activity.pendingMembers.size} pending", modifier = Modifier.padding(end = 16.dp),
+                        style = MaterialTheme.typography.labelLarge)
+                }
+            )
+        }
+    ) { padding ->
+        Column(
+            Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text("Membership approvals", style = MaterialTheme.typography.headlineSmall)
+            Text("Only accounts listed in the Firebase admins collection can approve or reject requests.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (activity.message.isNotBlank()) {
+                Text(activity.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            }
+            if (activity.pendingMembers.isEmpty()) {
+                ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("No pending requests", style = MaterialTheme.typography.titleMedium)
+                        Text("New Google sign-ups with pending status will appear here automatically.")
+                    }
+                }
+            } else {
+                activity.pendingMembers.forEach { pending ->
+                    val uid = pending["documentId"]?.toString().orEmpty()
+                    val name = pending["displayName"]?.toString()?.ifBlank { "Member" } ?: "Member"
+                    val email = pending["email"]?.toString().orEmpty()
+                    val photo = pending["photoURL"]?.toString().orEmpty()
+                    ElevatedCard(Modifier.fillMaxWidth()) {
+                        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                if (photo.isNotBlank()) AsyncImage(
+                                    model = photo, contentDescription = "Google profile photo",
+                                    modifier = Modifier.size(48.dp).clip(CircleShape), contentScale = ContentScale.Crop
+                                ) else Icon(Icons.Default.AccountCircle, contentDescription = null,
+                                    modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+                                Column(Modifier.weight(1f)) {
+                                    Text(name, style = MaterialTheme.typography.titleMedium)
+                                    Text(email, style = MaterialTheme.typography.bodySmall)
+                                    Text("Pending approval", style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.tertiary)
+                                }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                                Button(
+                                    onClick = { activity.reviewMember(uid, true) },
+                                    enabled = !activity.busy && uid.isNotBlank(),
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("Approve") }
+                                OutlinedButton(
+                                    onClick = { activity.reviewMember(uid, false) },
+                                    enabled = !activity.busy && uid.isNotBlank(),
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("Reject") }
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Back to map") }
+        }
+    }
+}
+
+@Composable
 private fun NativeMemberMap(
     points: List<Map<String, Any?>>,
     members: Map<String, Map<String, Any?>>,
