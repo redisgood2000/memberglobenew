@@ -76,7 +76,19 @@ jobs:
           APK="native-android/app/build/outputs/apk/debug/app-debug.apk"
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           test -n "$APKSIGNER"
-          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          CERT_OUTPUT="$("$APKSIGNER" verify --verbose --print-certs "$APK" 2>&1)"
+          printf '%s\n' "$CERT_OUTPUT"
+          SHA1="$(printf '%s\n' "$CERT_OUTPUT" | sed -n 's/.*certificate SHA-1 digest: //p' | head -n 1)"
+          SHA256="$(printf '%s\n' "$CERT_OUTPUT" | sed -n 's/.*certificate SHA-256 digest: //p' | head -n 1)"
+          {
+            echo "## Android APK signing certificate"
+            echo ""
+            echo "- Package name: com.memberglobe.nativeapp.test"
+            echo "- SHA-1: $SHA1"
+            echo "- SHA-256: $SHA256"
+            echo ""
+            echo "Register the SHA-1 under Firebase Console -> Project settings -> Your apps -> Android app."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
