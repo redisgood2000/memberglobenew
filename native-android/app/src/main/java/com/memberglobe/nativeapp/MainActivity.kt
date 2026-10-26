@@ -625,8 +625,8 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
                                                     style = MaterialTheme.typography.titleSmall, maxLines = 1)
                                                 Text(profile["email"]?.toString().orEmpty(), style = MaterialTheme.typography.bodySmall, maxLines = 1)
                                                 Text(
-                                                    if (!sharing) "Location hidden"
-                                                    else activity.memberAddresses[entry.key] ?: "Finding address…",
+                                                    if (!sharing) "Address hidden · location not shared"
+                                                    else "📍 " + (activity.memberAddresses[entry.key] ?: "Finding address…"),
                                                     style = MaterialTheme.typography.bodySmall,
                                                     maxLines = 2
                                                 )
@@ -837,16 +837,18 @@ private fun NativeMemberMap(
                 map.overlays.add(marker)
             }
             map.invalidate()
-            if (selectedMemberUid != null && selectedMemberUid != lastZoomedUid) {
-                val selectedPoint = points.firstOrNull { point ->
-                    (point["uid"]?.toString() ?: point["documentId"]?.toString()) == selectedMemberUid
-                }
-                val lat = (selectedPoint?.get("lat") as? Number)?.toDouble()
-                val lng = (selectedPoint?.get("lng") as? Number)?.toDouble()
-                if (lat != null && lng != null && lat in -90.0..90.0 && lng in -180.0..180.0) {
-                    map.controller.setZoom(17.0)
-                    map.controller.animateTo(GeoPoint(lat, lng))
-                    lastZoomedUid = selectedMemberUid
+            if (selectedMemberUid != null) {
+                if (selectedMemberUid != lastZoomedUid) {
+                    val selectedPoint = points.firstOrNull { point ->
+                        (point["uid"]?.toString() ?: point["documentId"]?.toString()) == selectedMemberUid
+                    }
+                    val lat = (selectedPoint?.get("lat") as? Number)?.toDouble()
+                    val lng = (selectedPoint?.get("lng") as? Number)?.toDouble()
+                    if (lat != null && lng != null && lat in -90.0..90.0 && lng in -180.0..180.0) {
+                        map.controller.setZoom(17.0)
+                        map.controller.animateTo(GeoPoint(lat, lng))
+                        lastZoomedUid = selectedMemberUid
+                    }
                 }
             } else if (points.size == 1) {
                 val p = points.first()
