@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.LocationOff
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -536,24 +538,55 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
                                 }
                                 Text("LIVE MAP", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                             }
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                                Button(
+                            val isSharingLocation = member?.get("locationSharing") == true
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                FilledTonalIconButton(
+                                    onClick = {
+                                        if (isSharingLocation) {
+                                            activity.stopLocationSharing()
+                                        } else {
+                                            val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                                            val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                                            if (fine || coarse) activity.shareCurrentLocation()
+                                            else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+                                        }
+                                    },
+                                    enabled = !activity.busy,
+                                    modifier = Modifier.size(54.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (isSharingLocation) Icons.Default.LocationOn else Icons.Default.LocationOff,
+                                        contentDescription = if (isSharingLocation) "Turn location sharing off" else "Turn location sharing on",
+                                        modifier = Modifier.size(28.dp),
+                                        tint = if (isSharingLocation) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        if (isSharingLocation) "GPS sharing is ON" else "GPS sharing is OFF",
+                                        style = MaterialTheme.typography.titleSmall
+                                    )
+                                    Text(
+                                        if (isSharingLocation) "Your location is shared with approved members." else "Your location is hidden from the map.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                OutlinedButton(
                                     onClick = {
                                         val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
                                         val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
                                         if (fine || coarse) activity.shareCurrentLocation()
                                         else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
                                     },
-                                    enabled = !activity.busy,
-                                    modifier = Modifier.weight(1f)
-                                ) { Text(if (activity.busy) "Updating…" else "◎  Share my GPS") }
-                                OutlinedButton(
-                                    onClick = { activity.stopLocationSharing() },
-                                    enabled = !activity.busy,
-                                    modifier = Modifier.weight(1f)
-                                ) { Text("Stop sharing") }
+                                    enabled = !activity.busy && isSharingLocation
+                                ) { Text(if (activity.busy) "Updating…" else "Update GPS") }
                             }
-                            Text("Location sharing is optional. GPS refreshes when you tap Share my GPS; background tracking is not enabled.",
+                            Text("Tap the location icon to turn sharing on or off. GPS updates only when you turn it on or tap Update GPS; background tracking is not enabled.",
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
