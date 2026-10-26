@@ -30,8 +30,8 @@ android {
         applicationId = "com.memberglobe.nativeapp.test"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 4
+        versionName = "0.4.0"
         buildConfigField("String", "FIREBASE_API_KEY", buildConfigString(firebaseValue("firebaseApiKey")))
         buildConfigField("String", "FIREBASE_APPLICATION_ID", buildConfigString(firebaseValue("firebaseApplicationId")))
         buildConfigField("String", "FIREBASE_PROJECT_ID", buildConfigString(firebaseValue("firebaseProjectId")))
@@ -66,6 +66,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
+    implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("com.google.android.gms:play-services-auth:21.3.0")
     implementation("com.google.android.gms:play-services-location:21.3.0")
     implementation("com.google.firebase:firebase-auth")
