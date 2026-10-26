@@ -405,6 +405,7 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
     var menuExpanded by remember { mutableStateOf(false) }
     var overlayAlpha by remember { mutableFloatStateOf(0.88f) }
     var showProfile by remember { mutableStateOf(false) }
+    var showAdminPanel by remember { mutableStateOf(false) }
     val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
