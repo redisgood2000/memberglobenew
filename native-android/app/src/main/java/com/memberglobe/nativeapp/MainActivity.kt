@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.MyLocation
@@ -81,7 +82,7 @@ private fun EmbeddedAdminPortal(onBack: () -> Unit) {
     Column(Modifier.fillMaxSize().background(Color.White)) {
         Surface(color = Color.White, shadowElevation = 3.dp) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) { Icon(Icons.Default.AdminPanelSettings, contentDescription = "Back to map") }
+                IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Back to map") }
                 Column(Modifier.weight(1f)) {
                     Text("MEMBER GLOBE", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Muted, letterSpacing = 1.sp)
                     Text(pageTitle, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Ink, maxLines = 1)
