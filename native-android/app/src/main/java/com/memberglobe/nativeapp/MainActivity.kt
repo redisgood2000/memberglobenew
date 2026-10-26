@@ -55,6 +55,11 @@ class MainActivity : ComponentActivity() {
         private set
     var approvedMembers by mutableStateOf<Map<String, Map<String, Any?>>>(emptyMap())
         private set
+    var isAdmin by mutableStateOf(false)
+        private set
+    var pendingMembers by mutableStateOf<List<Map<String, Any?>>>(emptyList())
+        private set
+    private var adminListener: ListenerRegistration? = null
     var message by mutableStateOf("")
     var busy by mutableStateOf(false)
     private var memberListener: ListenerRegistration? = null
@@ -104,7 +109,14 @@ class MainActivity : ComponentActivity() {
                 sharedLocations = emptyList()
                 approvedMembers = emptyMap()
                 member = null
-                if (user != null) ensureMemberProfile(user.uid)
+                adminListener?.remove()
+                adminListener = null
+                isAdmin = false
+                pendingMembers = emptyList()
+                if (user != null) {
+                    checkAdminAccess(user.uid)
+                    ensureMemberProfile(user.uid)
+                }
             }
         } catch (e: Exception) {
             message = "Firebase initialization failed: ${e.message ?: "check your project config"}"
@@ -157,6 +169,58 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             busy = false
             message = "Sign-in failed: ${e.message ?: "unknown error"}"
+        }
+    }
+
+    private fun checkAdminAccess(uid: String) {
+        val db = firestore ?: return
+        db.collection("admins").document(uid).get()
+            .addOnSuccessListener { snapshot ->
+                isAdmin = snapshot.exists()
+                adminListener?.remove()
+                adminListener = null
+                pendingMembers = emptyList()
+                if (snapshot.exists()) {
+                    adminListener = db.collection("members")
+                        .whereEqualTo("status", "pending")
+                        .addSnapshotListener { pending, error ->
+                            if (error != null) {
+                                message = "Admin approvals could not load: ${error.message}"
+                                return@addSnapshotListener
+                            }
+                            pendingMembers = pending?.documents?.map { snapshotToMap(it) + ("documentId" to it.id) } ?: emptyList()
+                        }
+                }
+            }
+            .addOnFailureListener { e ->
+                isAdmin = false
+                message = "Admin access check failed: ${e.message}"
+            }
+    }
+
+    fun reviewMember(uid: String, approve: Boolean) {
+        if (!isAdmin) {
+            message = "Admin access is required to review membership requests."
+            return
+        }
+        val db = firestore ?: return
+        val reviewer = auth?.currentUser?.uid ?: return
+        busy = true
+        val newStatus = if (approve) "approved" else "rejected"
+        db.collection("members").document(uid).update(
+            mapOf(
+                "status" to newStatus,
+                "reviewedAt" to FieldValue.serverTimestamp(),
+                "reviewedBy" to reviewer,
+                "updatedAt" to FieldValue.serverTimestamp(),
+                "locationSharing" to false
+            )
+        ).addOnSuccessListener {
+            busy = false
+            message = if (approve) "Member approved." else "Membership request rejected."
+        }.addOnFailureListener { e ->
+            busy = false
+            message = "Could not update membership: ${e.message}"
         }
     }
 
