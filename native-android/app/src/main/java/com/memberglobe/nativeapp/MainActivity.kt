@@ -2,7 +2,6 @@ package com.memberglobe.nativeapp
 
 import android.Manifest
 import android.content.Intent
-import android.net.Uri
 import android.content.pm.PackageManager
 import android.location.Location
 import android.os.Bundle
@@ -308,18 +307,6 @@ class MainActivity : ComponentActivity() {
 
     private fun snapshotToMap(snapshot: DocumentSnapshot): Map<String, Any?> = snapshot.data ?: emptyMap()
 
-    fun openWebDashboard() {
-        if (BuildConfig.FIREBASE_PROJECT_ID.isBlank()) {
-            message = "Set your Firebase project ID before opening the web dashboard."
-            return
-        }
-        try {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://${BuildConfig.FIREBASE_PROJECT_ID}.web.app/")))
-        } catch (e: Exception) {
-            message = "Could not open the web dashboard: ${e.message}"
-        }
-    }
-
     fun signOutMember() {
         adminListener?.remove()
         adminListener = null
@@ -623,6 +610,7 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NativeAdminPanel(
     activity: MainActivity,
