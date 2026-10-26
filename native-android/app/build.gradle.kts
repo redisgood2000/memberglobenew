@@ -13,7 +13,13 @@ val localFirebase = Properties().apply {
 fun firebaseValue(key: String): String =
     localFirebase.getProperty(key)
         ?: System.getenv(key.uppercase().replace('.', '_'))
-        ?: ""
+        ?: when (key) {
+            "firebaseApiKey" -> "AIzaSyBnF6gA8We7jYHzumzM5CFY2CGRuzJMeE"
+            "firebaseApplicationId" -> "1:622920961765:android:f2787e488d42e6fc2ece0c"
+            "firebaseProjectId" -> "member-globe-91998"
+            "firebaseWebClientId" -> "622920961765-dtj3vgsree8dir791tss0cturj6bdm8d.apps.googleusercontent.com"
+            else -> ""
+        }
 fun buildConfigString(value: String): String =
     "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
