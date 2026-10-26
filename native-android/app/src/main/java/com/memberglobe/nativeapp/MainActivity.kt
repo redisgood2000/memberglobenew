@@ -348,6 +348,8 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
     val member = activity.member
     val context = LocalContext.current
     var menuExpanded by remember { mutableStateOf(false) }
+    var overlayAlpha by remember { mutableFloatStateOf(0.88f) }
+    var showProfile by remember { mutableStateOf(false) }
     val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
@@ -376,7 +378,7 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
                 Surface(
                     modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
                     shape = MaterialTheme.shapes.extraLarge,
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = overlayAlpha),
                     tonalElevation = 5.dp,
                     shadowElevation = 5.dp
                 ) {
@@ -395,9 +397,21 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
                             DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                                 DropdownMenuItem(
                                     text = { Text("My profile · $displayName") },
-                                    onClick = { menuExpanded = false },
+                                    onClick = { menuExpanded = false; showProfile = !showProfile },
                                     leadingIcon = { Icon(Icons.Default.AccountCircle, contentDescription = null) }
                                 )
+                                HorizontalDivider()
+                                Text("Map overlay transparency", modifier = Modifier.padding(start = 16.dp, top = 8.dp),
+                                    style = MaterialTheme.typography.labelMedium)
+                                Slider(
+                                    value = overlayAlpha,
+                                    onValueChange = { overlayAlpha = it },
+                                    valueRange = 0.25f..1.0f,
+                                    modifier = Modifier.padding(horizontal = 12.dp)
+                                )
+                                Text("${(overlayAlpha * 100).toInt()}% opacity",
+                                    modifier = Modifier.padding(start = 16.dp, bottom = 8.dp),
+                                    style = MaterialTheme.typography.bodySmall)
                                 DropdownMenuItem(
                                     text = { Text("Open admin / web dashboard") },
                                     onClick = { menuExpanded = false; activity.openWebDashboard() }
@@ -425,10 +439,25 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
                                 style = MaterialTheme.typography.bodySmall)
                         }
                     }
+                    if (showProfile) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.large,
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = overlayAlpha),
+                            tonalElevation = 4.dp
+                        ) {
+                            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("My profile", style = MaterialTheme.typography.titleMedium)
+                                Text(displayName)
+                                Text(email, style = MaterialTheme.typography.bodySmall)
+                                Text("Membership: Approved", style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
+                    }
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = MaterialTheme.shapes.extraLarge,
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = overlayAlpha),
                         tonalElevation = 6.dp,
                         shadowElevation = 6.dp
                     ) {
