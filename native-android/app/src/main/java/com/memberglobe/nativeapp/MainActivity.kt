@@ -321,6 +321,10 @@ class MainActivity : ComponentActivity() {
     }
 
     fun signOutMember() {
+        adminListener?.remove()
+        adminListener = null
+        isAdmin = false
+        pendingMembers = emptyList()
         memberListener?.remove()
         memberListener = null
         detachMapListeners()
@@ -430,7 +434,9 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
         val photoUrl = member?.get("photoURL")?.toString()?.takeIf { it.isNotBlank() }
             ?: user?.photoUrl?.toString().orEmpty()
 
-        if (user != null && status == "approved") {
+        if (user != null && activity.isAdmin && showAdminPanel) {
+            NativeAdminPanel(activity = activity, modifier = Modifier.fillMaxSize(), onBack = { showAdminPanel = false })
+        } else if (user != null && status == "approved") {
             // Map-first dashboard: the map occupies the entire screen; controls float above it.
             Box(Modifier.fillMaxSize()) {
                 NativeMemberMap(
@@ -476,10 +482,12 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
                                 Text("${(overlayAlpha * 100).toInt()}% opacity",
                                     modifier = Modifier.padding(start = 16.dp, bottom = 8.dp),
                                     style = MaterialTheme.typography.bodySmall)
-                                DropdownMenuItem(
-                                    text = { Text("Open admin / web dashboard") },
-                                    onClick = { menuExpanded = false; activity.openWebDashboard() }
-                                )
+                                if (activity.isAdmin) {
+                                    DropdownMenuItem(
+                                        text = { Text("Native admin panel (${activity.pendingMembers.size} pending)") },
+                                        onClick = { menuExpanded = false; showAdminPanel = true }
+                                    )
+                                }
                                 DropdownMenuItem(
                                     text = { Text("Sign out") },
                                     onClick = { menuExpanded = false; activity.signOutMember() }
@@ -599,8 +607,10 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
                             "loading" -> Text("Loading your membership profile…")
                             else -> Text("Membership is not active. Contact your administrator.")
                         }
-                        OutlinedButton(onClick = { activity.openWebDashboard() }, modifier = Modifier.fillMaxWidth()) {
-                            Text("Open web dashboard and admin tools")
+                        if (activity.isAdmin) {
+                            Button(onClick = { showAdminPanel = true }, modifier = Modifier.fillMaxWidth()) {
+                                Text("Open native admin panel (${activity.pendingMembers.size} pending)")
+                            }
                         }
                         OutlinedButton(onClick = { activity.signOutMember() }, modifier = Modifier.fillMaxWidth()) { Text("Sign out") }
                     }
