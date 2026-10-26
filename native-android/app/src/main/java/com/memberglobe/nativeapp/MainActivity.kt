@@ -347,6 +347,7 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
     val user = activity.auth?.currentUser
     val member = activity.member
     val context = LocalContext.current
+    var menuExpanded by remember { mutableStateOf(false) }
     val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
@@ -356,90 +357,164 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
     }
 
     MaterialTheme {
-        Scaffold(topBar = { TopAppBar(title = { Text("Member Globe") }) }) { padding ->
-            Column(
-                Modifier.fillMaxSize().padding(padding).padding(horizontal = 18.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Icon(Icons.Default.Public, contentDescription = null, modifier = Modifier.size(38.dp), tint = MaterialTheme.colorScheme.primary)
-                    Column {
-                        Text("Member Globe", style = MaterialTheme.typography.headlineSmall)
-                        Text("Member location dashboard", style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-                if (user == null) {
-                    Text("Sign in with Google. New accounts wait for admin approval before member features are available.")
-                    Button(
-                        onClick = { activity.startGoogleSignIn() },
-                        enabled = !activity.busy && activity.auth != null && BuildConfig.FIREBASE_WEB_CLIENT_ID.isNotBlank(),
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text(if (activity.busy) "Please wait…" else "Continue with Google") }
-                } else {
-                    val displayName = member?.get("displayName")?.toString()?.takeIf { it.isNotBlank() }
-                        ?: user.displayName ?: "Member"
-                    val email = member?.get("email")?.toString()?.takeIf { it.isNotBlank() } ?: user.email.orEmpty()
-                    val photoUrl = member?.get("photoURL")?.toString()?.takeIf { it.isNotBlank() }
-                        ?: user.photoUrl?.toString().orEmpty()
-                    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            if (photoUrl.isNotBlank()) AsyncImage(
-                                model = photoUrl, contentDescription = "Google profile photo",
-                                modifier = Modifier.size(64.dp).clip(CircleShape), contentScale = ContentScale.Crop
-                            ) else Icon(Icons.Default.AccountCircle, contentDescription = "Default profile photo",
-                                modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.primary)
-                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                Text(displayName, style = MaterialTheme.typography.titleMedium)
-                                Text(email, style = MaterialTheme.typography.bodySmall)
-                                val status = member?.get("status")?.toString() ?: "loading"
-                                Text("Membership: ${status.replaceFirstChar { it.uppercase() }}", style = MaterialTheme.typography.labelMedium)
+        val status = member?.get("status")?.toString() ?: "loading"
+        val displayName = member?.get("displayName")?.toString()?.takeIf { it.isNotBlank() }
+            ?: user?.displayName ?: "Member"
+        val email = member?.get("email")?.toString()?.takeIf { it.isNotBlank() } ?: user?.email.orEmpty()
+        val photoUrl = member?.get("photoURL")?.toString()?.takeIf { it.isNotBlank() }
+            ?: user?.photoUrl?.toString().orEmpty()
+
+        if (user != null && status == "approved") {
+            // Map-first dashboard: the map occupies the entire screen; controls float above it.
+            Box(Modifier.fillMaxSize()) {
+                NativeMemberMap(
+                    points = activity.sharedLocations,
+                    members = activity.approvedMembers,
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                Surface(
+                    modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                    tonalElevation = 5.dp,
+                    shadowElevation = 5.dp
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(Icons.Default.Public, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("Member Globe", style = MaterialTheme.typography.titleMedium)
+                            Text("${activity.sharedLocations.size} member location(s) shared", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Box {
+                            IconButton(onClick = { menuExpanded = true }) { Text("☰", style = MaterialTheme.typography.headlineSmall) }
+                            DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("My profile · $displayName") },
+                                    onClick = { menuExpanded = false },
+                                    leadingIcon = { Icon(Icons.Default.AccountCircle, contentDescription = null) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Open admin / web dashboard") },
+                                    onClick = { menuExpanded = false; activity.openWebDashboard() }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Sign out") },
+                                    onClick = { menuExpanded = false; activity.signOutMember() }
+                                )
                             }
                         }
                     }
+                }
 
-                    when (member?.get("status")?.toString() ?: "loading") {
-                        "pending" -> Text("Your membership request is pending admin approval.")
-                        "approved" -> {
-                            Text("Global map · ${activity.sharedLocations.size} shared location(s)", style = MaterialTheme.typography.titleMedium)
-                            NativeMemberMap(
-                                points = activity.sharedLocations,
-                                members = activity.approvedMembers,
-                                modifier = Modifier.fillMaxWidth().height(310.dp)
-                            )
-                            Button(
-                                onClick = {
-                                    val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-                                    val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-                                    if (fine || coarse) activity.shareCurrentLocation()
-                                    else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
-                                },
-                                enabled = !activity.busy,
-                                modifier = Modifier.fillMaxWidth()
-                            ) { Text(if (activity.busy) "Updating location…" else "Update and share current GPS location") }
-                            OutlinedButton(
-                                onClick = { activity.stopLocationSharing() }, enabled = !activity.busy,
-                                modifier = Modifier.fillMaxWidth()
-                            ) { Text("Stop sharing and remove location") }
-                            Text("Sharing is opt-in. This version refreshes GPS when you tap Update; it does not track in the background.",
+                Column(
+                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (activity.message.isNotBlank()) {
+                        Surface(
+                            shape = MaterialTheme.shapes.large,
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                            tonalElevation = 3.dp
+                        ) {
+                            Text(activity.message, modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
                                 style = MaterialTheme.typography.bodySmall)
                         }
-                        "loading" -> Text("Loading your membership profile…")
-                        else -> Text("Membership is not active. Contact your administrator.")
                     }
-                    OutlinedButton(onClick = { activity.openWebDashboard() }, modifier = Modifier.fillMaxWidth()) {
-                        Text("Open web dashboard and admin tools")
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.extraLarge,
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+                        tonalElevation = 6.dp,
+                        shadowElevation = 6.dp
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                if (photoUrl.isNotBlank()) {
+                                    AsyncImage(model = photoUrl, contentDescription = "Google profile photo",
+                                        modifier = Modifier.size(42.dp).clip(CircleShape), contentScale = ContentScale.Crop)
+                                } else {
+                                    Icon(Icons.Default.AccountCircle, contentDescription = "Profile",
+                                        modifier = Modifier.size(42.dp), tint = MaterialTheme.colorScheme.primary)
+                                }
+                                Column(Modifier.weight(1f)) {
+                                    Text(displayName, style = MaterialTheme.typography.titleSmall)
+                                    Text(email, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                                }
+                                Text("LIVE MAP", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                Button(
+                                    onClick = {
+                                        val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                                        val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                                        if (fine || coarse) activity.shareCurrentLocation()
+                                        else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+                                    },
+                                    enabled = !activity.busy,
+                                    modifier = Modifier.weight(1f)
+                                ) { Text(if (activity.busy) "Updating…" else "◎  Share my GPS") }
+                                OutlinedButton(
+                                    onClick = { activity.stopLocationSharing() },
+                                    enabled = !activity.busy,
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("Stop sharing") }
+                            }
+                            Text("Location sharing is optional. GPS refreshes when you tap Share my GPS; background tracking is not enabled.",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
-                    OutlinedButton(onClick = { activity.signOutMember() }, modifier = Modifier.fillMaxWidth()) { Text("Sign out") }
                 }
-                if (activity.message.isNotBlank()) {
-                    Text(activity.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            }
+        } else {
+            Scaffold(topBar = { TopAppBar(title = { Text("Member Globe") }) }) { padding ->
+                Column(
+                    Modifier.fillMaxSize().padding(padding).padding(horizontal = 20.dp, vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(Icons.Default.Public, contentDescription = null, modifier = Modifier.size(52.dp), tint = MaterialTheme.colorScheme.primary)
+                    Text("Member Globe", style = MaterialTheme.typography.headlineMedium)
+                    Text("Member location dashboard", style = MaterialTheme.typography.bodyMedium)
+                    if (user == null) {
+                        Text("Sign in with Google. New accounts wait for admin approval before member features are available.")
+                        Button(
+                            onClick = { activity.startGoogleSignIn() },
+                            enabled = !activity.busy && activity.auth != null && BuildConfig.FIREBASE_WEB_CLIENT_ID.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(if (activity.busy) "Please wait…" else "Continue with Google") }
+                    } else {
+                        ElevatedCard(Modifier.fillMaxWidth()) {
+                            Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                if (photoUrl.isNotBlank()) AsyncImage(model = photoUrl, contentDescription = "Google profile photo",
+                                    modifier = Modifier.size(56.dp).clip(CircleShape), contentScale = ContentScale.Crop)
+                                else Icon(Icons.Default.AccountCircle, contentDescription = null, modifier = Modifier.size(56.dp))
+                                Column {
+                                    Text(displayName, style = MaterialTheme.typography.titleMedium)
+                                    Text(email, style = MaterialTheme.typography.bodySmall)
+                                    Text("Membership: ${status.replaceFirstChar { it.uppercase() }}", style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                        }
+                        when (status) {
+                            "pending" -> Text("Your membership request is pending admin approval.")
+                            "loading" -> Text("Loading your membership profile…")
+                            else -> Text("Membership is not active. Contact your administrator.")
+                        }
+                        OutlinedButton(onClick = { activity.openWebDashboard() }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Open web dashboard and admin tools")
+                        }
+                        OutlinedButton(onClick = { activity.signOutMember() }, modifier = Modifier.fillMaxWidth()) { Text("Sign out") }
+                    }
+                    if (activity.message.isNotBlank()) Text(activity.message, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary)
+                    Text("Your location stays off until you choose to share it.", style = MaterialTheme.typography.bodySmall)
                 }
-                Text("Your location stays off until you choose to share it.", style = MaterialTheme.typography.bodySmall)
             }
         }
     }
