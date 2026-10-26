@@ -21,6 +21,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -37,6 +38,11 @@ import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import org.osmdroid.config.Configuration
+import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.Marker
 
 class MainActivity : ComponentActivity() {
     var auth: FirebaseAuth? = null
@@ -45,15 +51,28 @@ class MainActivity : ComponentActivity() {
         private set
     var member by mutableStateOf<Map<String, Any?>?>(null)
         private set
+    var sharedLocations by mutableStateOf<List<Map<String, Any?>>>(emptyList())
+        private set
+    var approvedMembers by mutableStateOf<Map<String, Map<String, Any?>>>(emptyMap())
+        private set
     var message by mutableStateOf("")
     var busy by mutableStateOf(false)
     private var memberListener: ListenerRegistration? = null
+    private var locationsListener: ListenerRegistration? = null
+    private var membersListener: ListenerRegistration? = null
+    private var mapListenersUid: String? = null
     private val locationClient by lazy { LocationServices.getFusedLocationProviderClient(this) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Configuration.getInstance().userAgentValue = packageName
         initializeFirebase()
         setContent { MemberGlobeNativeScreen(this) }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // osmdroid views are resumed by the composable's lifecycle effect.
     }
 
     private fun initializeFirebase() {
@@ -70,14 +89,20 @@ class MainActivity : ComponentActivity() {
                 .setApplicationId(BuildConfig.FIREBASE_APPLICATION_ID)
                 .setProjectId(BuildConfig.FIREBASE_PROJECT_ID)
                 .build()
-            val app = FirebaseApp.initializeApp(this, options)
-                ?: FirebaseApp.getInstance()
+            val app = FirebaseApp.initializeApp(this, options) ?: FirebaseApp.getInstance()
             auth = FirebaseAuth.getInstance(app)
             firestore = FirebaseFirestore.getInstance(app)
             auth?.addAuthStateListener { firebaseAuth ->
                 val user = firebaseAuth.currentUser
                 memberListener?.remove()
+                locationsListener?.remove()
+                membersListener?.remove()
                 memberListener = null
+                locationsListener = null
+                membersListener = null
+                mapListenersUid = null
+                sharedLocations = emptyList()
+                approvedMembers = emptyMap()
                 member = null
                 if (user != null) ensureMemberProfile(user.uid)
             }
@@ -110,8 +135,7 @@ class MainActivity : ComponentActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != REQUEST_GOOGLE_SIGN_IN) return
         try {
-            val account = GoogleSignIn.getSignedInAccountFromIntent(data)
-                .getResult(ApiException::class.java)
+            val account = GoogleSignIn.getSignedInAccountFromIntent(data).getResult(ApiException::class.java)
             val idToken = account.idToken
             if (idToken.isNullOrBlank()) {
                 busy = false
@@ -119,15 +143,14 @@ class MainActivity : ComponentActivity() {
                 return
             }
             val credential = GoogleAuthProvider.getCredential(idToken, null)
-            auth?.signInWithCredential(credential)
-                ?.addOnCompleteListener { task ->
-                    busy = false
-                    if (task.isSuccessful) message = "Signed in securely with Firebase."
-                    else message = "Firebase sign-in failed: ${task.exception?.message ?: "unknown error"}"
-                } ?: run {
-                    busy = false
-                    message = "Firebase Auth is not initialized."
-                }
+            auth?.signInWithCredential(credential)?.addOnCompleteListener { task ->
+                busy = false
+                if (task.isSuccessful) message = "Signed in securely with Firebase."
+                else message = "Firebase sign-in failed: ${task.exception?.message ?: "unknown error"}"
+            } ?: run {
+                busy = false
+                message = "Firebase Auth is not initialized."
+            }
         } catch (e: ApiException) {
             busy = false
             message = "Google sign-in failed (code ${e.statusCode}). Check OAuth configuration and SHA-1."
@@ -155,12 +178,8 @@ class MainActivity : ComponentActivity() {
                     "createdAt" to FieldValue.serverTimestamp(),
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
-                ref.set(profile).addOnFailureListener { e ->
-                    message = "Could not create member request: ${e.message}"
-                }
+                ref.set(profile).addOnFailureListener { e -> message = "Could not create member request: ${e.message}" }
             } else {
-                // Refresh the Google identity fields on the member profile without changing
-                // admin-controlled status, phone, bio, or location-sharing preferences.
                 ref.update(
                     mapOf(
                         "displayName" to (user.displayName ?: user.email?.substringBefore("@") ?: "Member"),
@@ -176,14 +195,54 @@ class MainActivity : ComponentActivity() {
                     return@addSnapshotListener
                 }
                 member = doc?.let { snapshotToMap(it) }
+                if (member?.get("status") == "approved") attachMapListeners(uid)
+                else detachMapListeners()
             }
         }.addOnFailureListener { e ->
             message = "Could not load member profile: ${e.message}. Check Firestore rules."
         }
     }
 
-    private fun snapshotToMap(snapshot: DocumentSnapshot): Map<String, Any?> =
-        snapshot.data ?: emptyMap()
+    private fun attachMapListeners(uid: String) {
+        if (mapListenersUid == uid) return
+        val db = firestore ?: return
+        mapListenersUid = uid
+        locationsListener?.remove()
+        membersListener?.remove()
+        // These filters match the Firestore rules for approved members' shared points.
+        locationsListener = db.collection("locations")
+            .whereEqualTo("sharing", true)
+            .whereEqualTo("memberStatus", "approved")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    message = "Map locations could not load: ${error.message}"
+                    return@addSnapshotListener
+                }
+                sharedLocations = snapshot?.documents?.map { snapshotToMap(it) + ("documentId" to it.id) } ?: emptyList()
+                if (sharedLocations.isEmpty()) message = "Map is ready. No approved members are sharing a location yet."
+            }
+        membersListener = db.collection("members")
+            .whereEqualTo("status", "approved")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    message = "Member names could not load for the map: ${error.message}"
+                    return@addSnapshotListener
+                }
+                approvedMembers = snapshot?.documents?.associate { it.id to snapshotToMap(it) } ?: emptyMap()
+            }
+    }
+
+    private fun detachMapListeners() {
+        locationsListener?.remove()
+        membersListener?.remove()
+        locationsListener = null
+        membersListener = null
+        mapListenersUid = null
+        sharedLocations = emptyList()
+        approvedMembers = emptyMap()
+    }
+
+    private fun snapshotToMap(snapshot: DocumentSnapshot): Map<String, Any?> = snapshot.data ?: emptyMap()
 
     fun openWebDashboard() {
         if (BuildConfig.FIREBASE_PROJECT_ID.isBlank()) {
@@ -200,10 +259,10 @@ class MainActivity : ComponentActivity() {
     fun signOutMember() {
         memberListener?.remove()
         memberListener = null
+        detachMapListeners()
         member = null
         auth?.signOut()
-        GoogleSignIn.getClient(this, GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).build())
-            .signOut()
+        GoogleSignIn.getClient(this, GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).build()).signOut()
         message = "Signed out."
     }
 
@@ -217,10 +276,11 @@ class MainActivity : ComponentActivity() {
         val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
         if (!fine && !coarse) {
-            message = "Allow location permission first."
+            message = "Location permission is missing. Allow it in Android Settings and try again."
             return
         }
         busy = true
+        message = "Getting your current GPS location…"
         db.collection("members").document(user.uid).update(
             mapOf("locationSharing" to true, "updatedAt" to FieldValue.serverTimestamp())
         ).addOnSuccessListener {
@@ -229,9 +289,8 @@ class MainActivity : ComponentActivity() {
                 CancellationTokenSource().token
             ).addOnSuccessListener { location: Location? ->
                 if (location == null) {
-                    db.collection("members").document(user.uid).update("locationSharing", false)
                     busy = false
-                    message = "Could not get a GPS fix. Move outdoors and try again."
+                    message = "Android returned no GPS fix. Turn on Location, allow precise location, then try outdoors again."
                     return@addOnSuccessListener
                 }
                 val point = hashMapOf<String, Any>(
@@ -246,20 +305,18 @@ class MainActivity : ComponentActivity() {
                 db.collection("locations").document(user.uid).set(point)
                     .addOnSuccessListener {
                         busy = false
-                        message = "Location shared. Press Update location again to refresh it."
+                        message = "GPS shared (accuracy about ${location.accuracy.toInt()} m). The map will update automatically. Tap Update to refresh your location."
                     }.addOnFailureListener { e ->
-                        db.collection("members").document(user.uid).update("locationSharing", false)
                         busy = false
-                        message = "Could not save location: ${e.message}"
+                        message = "GPS was found but Firestore rejected the location: ${e.message}"
                     }
             }.addOnFailureListener { e ->
-                db.collection("members").document(user.uid).update("locationSharing", false)
                 busy = false
-                message = "Could not read GPS: ${e.message}"
+                message = "GPS lookup failed: ${e.message}"
             }
         }.addOnFailureListener { e ->
             busy = false
-            message = "Could not enable sharing: ${e.message}"
+            message = "Could not enable location sharing in your member profile: ${e.message}"
         }
     }
 
@@ -270,11 +327,11 @@ class MainActivity : ComponentActivity() {
         db.collection("members").document(user.uid).update(
             mapOf("locationSharing" to false, "updatedAt" to FieldValue.serverTimestamp())
         ).addOnSuccessListener {
-            db.collection("locations").document(user.uid).delete()
-                .addOnCompleteListener {
-                    busy = false
-                    message = "Location sharing is off and your shared point was removed."
-                }
+            db.collection("locations").document(user.uid).delete().addOnCompleteListener { task ->
+                busy = false
+                if (task.isSuccessful) message = "Location sharing is off and your shared point was removed."
+                else message = "Sharing is off, but the old map point could not be removed: ${task.exception?.message}"
+            }
         }.addOnFailureListener { e ->
             busy = false
             message = "Could not stop sharing: ${e.message}"
@@ -294,87 +351,66 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
         androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
         if (results[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
-            results[Manifest.permission.ACCESS_COARSE_LOCATION] == true) {
-            activity.shareCurrentLocation()
-        } else {
-            activity.message = "Location permission was denied. Your location has not been shared."
-        }
+            results[Manifest.permission.ACCESS_COARSE_LOCATION] == true) activity.shareCurrentLocation()
+        else activity.message = "Location permission was denied. Your location has not been shared."
     }
 
     MaterialTheme {
         Scaffold(topBar = { TopAppBar(title = { Text("Member Globe") }) }) { padding ->
             Column(
-                Modifier.fillMaxSize().padding(padding).padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                Modifier.fillMaxSize().padding(padding).padding(horizontal = 18.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Spacer(Modifier.height(8.dp))
-                Icon(Icons.Default.Public, contentDescription = null,
-                    modifier = Modifier.size(58.dp), tint = MaterialTheme.colorScheme.primary)
-                Text("Member Globe", style = MaterialTheme.typography.headlineMedium)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Icon(Icons.Default.Public, contentDescription = null, modifier = Modifier.size(38.dp), tint = MaterialTheme.colorScheme.primary)
+                    Column {
+                        Text("Member Globe", style = MaterialTheme.typography.headlineSmall)
+                        Text("Member location dashboard", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
                 if (user == null) {
                     Text("Sign in with Google. New accounts wait for admin approval before member features are available.")
                     Button(
                         onClick = { activity.startGoogleSignIn() },
-                        enabled = !activity.busy && activity.auth != null &&
-                            BuildConfig.FIREBASE_WEB_CLIENT_ID.isNotBlank(),
+                        enabled = !activity.busy && activity.auth != null && BuildConfig.FIREBASE_WEB_CLIENT_ID.isNotBlank(),
                         modifier = Modifier.fillMaxWidth()
                     ) { Text(if (activity.busy) "Please wait…" else "Continue with Google") }
-                    if (activity.auth == null) {
-                        Text("Add your Firebase values to native-android/local.properties to enable sign-in.",
-                            style = MaterialTheme.typography.bodySmall)
-                    }
                 } else {
-                    val displayName = member?.get("displayName")?.toString()
-                        ?.takeIf { it.isNotBlank() } ?: user.displayName ?: "Member"
-                    val email = member?.get("email")?.toString()
-                        ?.takeIf { it.isNotBlank() } ?: user.email.orEmpty()
-                    val photoUrl = member?.get("photoURL")?.toString()
-                        ?.takeIf { it.isNotBlank() } ?: user.photoUrl?.toString().orEmpty()
-
+                    val displayName = member?.get("displayName")?.toString()?.takeIf { it.isNotBlank() }
+                        ?: user.displayName ?: "Member"
+                    val email = member?.get("email")?.toString()?.takeIf { it.isNotBlank() } ?: user.email.orEmpty()
+                    val photoUrl = member?.get("photoURL")?.toString()?.takeIf { it.isNotBlank() }
+                        ?: user.photoUrl?.toString().orEmpty()
                     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            if (photoUrl.isNotBlank()) {
-                                AsyncImage(
-                                    model = photoUrl,
-                                    contentDescription = "Google profile photo",
-                                    modifier = Modifier.size(76.dp).clip(CircleShape),
-                                    contentScale = ContentScale.Crop
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Default.AccountCircle,
-                                    contentDescription = "Default profile photo",
-                                    modifier = Modifier.size(76.dp),
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(displayName, style = MaterialTheme.typography.titleLarge)
-                                Text(email, style = MaterialTheme.typography.bodyMedium)
+                            if (photoUrl.isNotBlank()) AsyncImage(
+                                model = photoUrl, contentDescription = "Google profile photo",
+                                modifier = Modifier.size(64.dp).clip(CircleShape), contentScale = ContentScale.Crop
+                            ) else Icon(Icons.Default.AccountCircle, contentDescription = "Default profile photo",
+                                modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.primary)
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text(displayName, style = MaterialTheme.typography.titleMedium)
+                                Text(email, style = MaterialTheme.typography.bodySmall)
                                 val status = member?.get("status")?.toString() ?: "loading"
-                                AssistChip(
-                                    onClick = {},
-                                    label = { Text(status.replaceFirstChar { it.uppercase() }) },
-                                    enabled = false
-                                )
+                                Text("Membership: ${status.replaceFirstChar { it.uppercase() }}", style = MaterialTheme.typography.labelMedium)
                             }
                         }
                     }
 
-                    val status = member?.get("status")?.toString() ?: "loading"
-                    when (status) {
-                        "pending" -> {
-                            Text("Your membership request is pending admin approval.")
-                            Text("Your Google profile details are shown here automatically.")
-                        }
+                    when (member?.get("status")?.toString() ?: "loading") {
+                        "pending" -> Text("Your membership request is pending admin approval.")
                         "approved" -> {
-                            Text("Membership approved.")
-                            Text("Location sharing is ${if (member?.get("locationSharing") == true) "ON" else "OFF"}. GPS sharing is opt-in.")
+                            Text("Global map · ${activity.sharedLocations.size} shared location(s)", style = MaterialTheme.typography.titleMedium)
+                            NativeMemberMap(
+                                points = activity.sharedLocations,
+                                members = activity.approvedMembers,
+                                modifier = Modifier.fillMaxWidth().height(310.dp)
+                            )
                             Button(
                                 onClick = {
                                     val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -384,33 +420,87 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
                                 },
                                 enabled = !activity.busy,
                                 modifier = Modifier.fillMaxWidth()
-                            ) { Text("Update and share current GPS location") }
+                            ) { Text(if (activity.busy) "Updating location…" else "Update and share current GPS location") }
                             OutlinedButton(
-                                onClick = { activity.stopLocationSharing() },
-                                enabled = !activity.busy,
+                                onClick = { activity.stopLocationSharing() }, enabled = !activity.busy,
                                 modifier = Modifier.fillMaxWidth()
                             ) { Text("Stop sharing and remove location") }
-                            Text("This button shares one current GPS fix at a time. Tap Update to refresh it; it does not track in the background.",
+                            Text("Sharing is opt-in. This version refreshes GPS when you tap Update; it does not track in the background.",
                                 style = MaterialTheme.typography.bodySmall)
                         }
                         "loading" -> Text("Loading your membership profile…")
                         else -> Text("Membership is not active. Contact your administrator.")
                     }
                     OutlinedButton(onClick = { activity.openWebDashboard() }, modifier = Modifier.fillMaxWidth()) {
-                        Text("Open web dashboard, map and admin tools")
+                        Text("Open web dashboard and admin tools")
                     }
-                    OutlinedButton(onClick = { activity.signOutMember() }, modifier = Modifier.fillMaxWidth()) {
-                        Text("Sign out")
-                    }
+                    OutlinedButton(onClick = { activity.signOutMember() }, modifier = Modifier.fillMaxWidth()) { Text("Sign out") }
                 }
                 if (activity.message.isNotBlank()) {
-                    Text(activity.message, style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary)
+                    Text(activity.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 }
-                Spacer(Modifier.weight(1f))
-                Text("Your location stays off until you choose to share it.",
-                    style = MaterialTheme.typography.bodySmall)
+                Text("Your location stays off until you choose to share it.", style = MaterialTheme.typography.bodySmall)
             }
         }
     }
+}
+
+@Composable
+private fun NativeMemberMap(
+    points: List<Map<String, Any?>>,
+    members: Map<String, Map<String, Any?>>,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val mapView = remember {
+        MapView(context).apply {
+            setTileSource(TileSourceFactory.MAPNIK)
+            setMultiTouchControls(true)
+            controller.setZoom(5.0)
+            controller.setCenter(GeoPoint(12.8797, 121.7740))
+        }
+    }
+    DisposableEffect(mapView) {
+        mapView.onResume()
+        onDispose {
+            mapView.onPause()
+            mapView.onDetach()
+        }
+    }
+    AndroidView(
+        factory = { mapView },
+        modifier = modifier,
+        update = { map ->
+            map.overlays.clear()
+            points.forEach { point ->
+                val lat = (point["lat"] as? Number)?.toDouble() ?: return@forEach
+                val lng = (point["lng"] as? Number)?.toDouble() ?: return@forEach
+                if (lat !in -90.0..90.0 || lng !in -180.0..180.0) return@forEach
+                val uid = point["uid"]?.toString() ?: point["documentId"]?.toString().orEmpty()
+                val profile = members[uid]
+                val name = profile?.get("displayName")?.toString()?.takeIf { it.isNotBlank() } ?: "Member"
+                val marker = Marker(map).apply {
+                    position = GeoPoint(lat, lng)
+                    title = name
+                    snippet = profile?.get("email")?.toString().orEmpty()
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                }
+                map.overlays.add(marker)
+            }
+            map.invalidate()
+            if (points.size == 1) {
+                val p = points.first()
+                val lat = (p["lat"] as? Number)?.toDouble()
+                val lng = (p["lng"] as? Number)?.toDouble()
+                if (lat != null && lng != null) map.controller.animateTo(GeoPoint(lat, lng))
+            } else if (points.size > 1) {
+                val valid = points.mapNotNull { p ->
+                    val lat = (p["lat"] as? Number)?.toDouble()
+                    val lng = (p["lng"] as? Number)?.toDouble()
+                    if (lat != null && lng != null && lat in -90.0..90.0 && lng in -180.0..180.0) GeoPoint(lat, lng) else null
+                }
+                if (valid.isNotEmpty()) map.zoomToBoundingBox(org.osmdroid.util.BoundingBox.fromGeoPoints(valid), true)
+            }
+        }
+    )
 }
