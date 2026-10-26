@@ -9,15 +9,20 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import coil.compose.AsyncImage
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
@@ -153,6 +158,17 @@ class MainActivity : ComponentActivity() {
                 ref.set(profile).addOnFailureListener { e ->
                     message = "Could not create member request: ${e.message}"
                 }
+            } else {
+                // Refresh the Google identity fields on the member profile without changing
+                // admin-controlled status, phone, bio, or location-sharing preferences.
+                ref.update(
+                    mapOf(
+                        "displayName" to (user.displayName ?: user.email?.substringBefore("@") ?: "Member"),
+                        "email" to (user.email ?: ""),
+                        "photoURL" to (user.photoUrl?.toString() ?: ""),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                )
             }
             memberListener = ref.addSnapshotListener { doc, error ->
                 if (error != null) {
@@ -309,12 +325,52 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
                             style = MaterialTheme.typography.bodySmall)
                     }
                 } else {
-                    Text(user.displayName ?: user.email ?: "Signed in")
+                    val displayName = member?.get("displayName")?.toString()
+                        ?.takeIf { it.isNotBlank() } ?: user.displayName ?: "Member"
+                    val email = member?.get("email")?.toString()
+                        ?.takeIf { it.isNotBlank() } ?: user.email.orEmpty()
+                    val photoUrl = member?.get("photoURL")?.toString()
+                        ?.takeIf { it.isNotBlank() } ?: user.photoUrl?.toString().orEmpty()
+
+                    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            if (photoUrl.isNotBlank()) {
+                                AsyncImage(
+                                    model = photoUrl,
+                                    contentDescription = "Google profile photo",
+                                    modifier = Modifier.size(76.dp).clip(CircleShape),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.AccountCircle,
+                                    contentDescription = "Default profile photo",
+                                    modifier = Modifier.size(76.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(displayName, style = MaterialTheme.typography.titleLarge)
+                                Text(email, style = MaterialTheme.typography.bodyMedium)
+                                val status = member?.get("status")?.toString() ?: "loading"
+                                AssistChip(
+                                    onClick = {},
+                                    label = { Text(status.replaceFirstChar { it.uppercase() }) },
+                                    enabled = false
+                                )
+                            }
+                        }
+                    }
+
                     val status = member?.get("status")?.toString() ?: "loading"
                     when (status) {
                         "pending" -> {
                             Text("Your membership request is pending admin approval.")
-                            Text("After approval, use the web dashboard for the admin review page and live global map.")
+                            Text("Your Google profile details are shown here automatically.")
                         }
                         "approved" -> {
                             Text("Membership approved.")
@@ -334,9 +390,10 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
                                 enabled = !activity.busy,
                                 modifier = Modifier.fillMaxWidth()
                             ) { Text("Stop sharing and remove location") }
-                            Text("This button shares one current GPS fix at a time. Tap Update to refresh your point; it does not track in the background.",
+                            Text("This button shares one current GPS fix at a time. Tap Update to refresh it; it does not track in the background.",
                                 style = MaterialTheme.typography.bodySmall)
                         }
+                        "loading" -> Text("Loading your membership profile…")
                         else -> Text("Membership is not active. Contact your administrator.")
                     }
                     OutlinedButton(onClick = { activity.openWebDashboard() }, modifier = Modifier.fillMaxWidth()) {
