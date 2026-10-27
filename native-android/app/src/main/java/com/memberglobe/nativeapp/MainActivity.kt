@@ -115,6 +115,7 @@ class MainActivity : ComponentActivity() {
                 .setApiKey(BuildConfig.FIREBASE_API_KEY)
                 .setApplicationId(BuildConfig.FIREBASE_APPLICATION_ID)
                 .setProjectId(BuildConfig.FIREBASE_PROJECT_ID)
+                .setGcmSenderId("622920961765")
                 .build()
             val app = FirebaseApp.initializeApp(this, options) ?: FirebaseApp.getInstance()
             auth = FirebaseAuth.getInstance(app)
@@ -365,13 +366,13 @@ class MainActivity : ComponentActivity() {
     private fun attachChatListener() {
         if (chatListener != null) return
         val db = firestore ?: return
-        chatListener = db.collection("groupMessages").orderBy("createdAt")
+        chatListener = db.collection("groupMessages").orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
             .limit(100).addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     message = "Group chat could not load: ${error.message}"
                     return@addSnapshotListener
                 }
-                chatMessages = snapshot?.documents?.map { snapshotToMap(it) + ("documentId" to it.id) } ?: emptyList()
+                chatMessages = snapshot?.documents?.map { snapshotToMap(it) + ("documentId" to it.id) }?.reversed() ?: emptyList()
             }
     }
 
