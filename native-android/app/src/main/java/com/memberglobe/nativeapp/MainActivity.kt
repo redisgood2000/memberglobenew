@@ -625,10 +625,10 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
                             Text("Member Globe", style = MaterialTheme.typography.titleMedium)
                             Text("${activity.sharedLocations.size} member location(s) shared", style = MaterialTheme.typography.bodySmall)
                         }
-                        IconButton(onClick = { showMembersPanel = !showMembersPanel }) {
+                        IconButton(onClick = { showMembersPanel = !showMembersPanel; if (showMembersPanel) { showChatPanel = false; showProfile = false } }) {
                             Icon(Icons.Default.Groups, contentDescription = "Open member list")
                         }
-                        IconButton(onClick = { showChatPanel = !showChatPanel }) {
+                        IconButton(onClick = { showChatPanel = !showChatPanel; if (showChatPanel) { showMembersPanel = false; showProfile = false } }) {
                             BadgedBox(badge = { if (activity.chatMessages.isNotEmpty()) Badge { Text(activity.chatMessages.size.coerceAtMost(99).toString()) } }) {
                                 Icon(Icons.Default.Chat, contentDescription = "Open group chat")
                             }
@@ -659,26 +659,29 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
 
                 // Compact floating actions: only the GPS icon is shown for location sharing.
                 val isSharingLocation = member?.get("locationSharing") == true
-                FloatingActionButton(
-                    onClick = {
-                        if (isSharingLocation) activity.stopLocationSharing()
-                        else {
-                            val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-                            val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-                            if (fine || coarse) activity.shareCurrentLocation()
-                            else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
-                        }
-                    },
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(18.dp).size(54.dp),
-                    containerColor = if (isSharingLocation) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
-                    contentColor = if (isSharingLocation) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                    elevation = FloatingActionButtonDefaults.elevation(6.dp)
-                ) {
-                    Icon(
-                        imageVector = if (isSharingLocation) Icons.Default.LocationOn else Icons.Default.LocationOff,
-                        contentDescription = if (isSharingLocation) "Turn GPS sharing off" else "Turn GPS sharing on",
-                        modifier = Modifier.size(27.dp)
-                    )
+                // Keep the GPS control out of the chat composer and keyboard area.
+                if (!showChatPanel) {
+                    FloatingActionButton(
+                        onClick = {
+                            if (isSharingLocation) activity.stopLocationSharing()
+                            else {
+                                val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                                val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                                if (fine || coarse) activity.shareCurrentLocation()
+                                else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+                            }
+                        },
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(18.dp).size(54.dp),
+                        containerColor = if (isSharingLocation) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+                        contentColor = if (isSharingLocation) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                        elevation = FloatingActionButtonDefaults.elevation(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isSharingLocation) Icons.Default.LocationOn else Icons.Default.LocationOff,
+                            contentDescription = if (isSharingLocation) "Turn GPS sharing off" else "Turn GPS sharing on",
+                            modifier = Modifier.size(27.dp)
+                        )
+                    }
                 }
 
                 if (showProfile) {
@@ -700,7 +703,7 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
                 if (showChatPanel) {
                     NativeGroupChatPanel(
                         activity = activity,
-                        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(0.72f).padding(horizontal = 10.dp, vertical = 12.dp),
+                        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(0.72f).padding(horizontal = 10.dp, vertical = 12.dp).imePadding(),
                         onClose = { showChatPanel = false }
                     )
                 }
@@ -783,9 +786,10 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
                     }
                 }
 
-                if (activity.message.isNotBlank()) {
+                // Status messages stay clear of the chat panel, member drawer, and GPS button.
+                if (activity.message.isNotBlank() && !showChatPanel && !showMembersPanel) {
                     Surface(
-                        modifier = Modifier.align(Alignment.BottomCenter).padding(start = 12.dp, end = 82.dp, bottom = 12.dp),
+                        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(start = 12.dp, end = 82.dp, bottom = 84.dp),
                         shape = MaterialTheme.shapes.large,
                         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
                         tonalElevation = 3.dp
