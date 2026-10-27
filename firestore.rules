@@ -1,0 +1,106 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isAdmin() {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+    function isApproved(uid) {
+      return exists(/databases/$(database)/documents/members/$(uid)) &&
+        get(/databases/$(database)/documents/members/$(uid)).data.status == 'approved';
+    }
+
+    match /admins/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      // Bootstrap admins manually in the Firebase Console. Never allow clients to grant admin.
+      allow create, update, delete: if false;
+    }
+
+    match /members/{uid} {
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly([
+          'uid', 'displayName', 'email', 'photoURL', 'phone', 'bio',
+          'status', 'createdAt', 'updatedAt', 'locationSharing'
+        ])
+        && request.resource.data.uid == uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.locationSharing == false
+        && request.resource.data.email == request.auth.token.email;
+
+      allow get: if signedIn() &&
+        (request.auth.uid == uid || isAdmin() ||
+         resource.data.status == 'approved');
+
+      // Non-admin member queries must constrain results to approved profiles.
+      allow list: if isAdmin() || (signedIn() && resource.data.status == 'approved');
+
+      allow update: if signedIn() && (
+        (isAdmin() &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'reviewedAt', 'reviewedBy', 'updatedAt', 'locationSharing']) &&
+          request.resource.data.status in ['pending', 'approved', 'rejected', 'suspended'])
+        ||
+        (request.auth.uid == uid &&
+          request.resource.data.uid == resource.data.uid &&
+          request.resource.data.status == resource.data.status &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['displayName', 'phone', 'bio', 'photoURL', 'updatedAt', 'locationSharing']) &&
+          request.resource.data.locationSharing is bool &&
+          (request.resource.data.locationSharing == false ||
+            resource.data.status == 'approved'))
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /locations/{uid} {
+      allow get, list: if signedIn() && (
+        isAdmin() ||
+        (resource.data.sharing == true &&
+         resource.data.memberStatus == 'approved' &&
+         isApproved(request.auth.uid))
+      );
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && isApproved(uid)
+        && get(/databases/$(database)/documents/members/$(uid)).data.locationSharing == true
+        && request.resource.data.keys().hasOnly([
+          'uid', 'lat', 'lng', 'accuracy', 'sharing', 'memberStatus', 'updatedAt'
+        ])
+        && request.resource.data.uid == uid
+        && request.resource.data.lat is number
+        && request.resource.data.lng is number
+        && request.resource.data.lat >= -90 && request.resource.data.lat <= 90
+        && request.resource.data.lng >= -180 && request.resource.data.lng <= 180
+        && request.resource.data.sharing == true
+        && request.resource.data.memberStatus == 'approved';
+      allow delete: if signedIn() && (
+        request.auth.uid == uid || isAdmin()
+      );
+    }
+
+    match /groupMessages/{messageId} {
+      allow get, list: if signedIn() && isApproved(request.auth.uid);
+      allow create: if signedIn() && isApproved(request.auth.uid)
+        && request.resource.data.keys().hasOnly(['senderUid', 'senderName', 'senderPhotoURL', 'text', 'createdAt'])
+        && request.resource.data.senderUid == request.auth.uid
+        && request.resource.data.senderName is string
+        && request.resource.data.senderName.size() <= 80
+        && request.resource.data.senderPhotoURL is string
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 2000;
+      allow update, delete: if false;
+    }
+
+    match /deviceTokens/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list: if false;
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['uid', 'token', 'updatedAt'])
+        && request.resource.data.uid == uid
+        && request.resource.data.token is string;
+      allow delete: if signedIn() && request.auth.uid == uid;
+    }
+  }
+}

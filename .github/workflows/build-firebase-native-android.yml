@@ -1,0 +1,99 @@
+# Firebase-configured native Android APK build
+name: Build Firebase Member Globe Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [firebase-migration]
+    paths:
+      - "native-android/**"
+      - ".github/workflows/build-firebase-native-android.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Add optional Firebase client configuration
+        env:
+          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+          FIREBASE_APPLICATION_ID: ${{ secrets.FIREBASE_APPLICATION_ID }}
+          FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+          FIREBASE_WEB_CLIENT_ID: ${{ vars.FIREBASE_WEB_CLIENT_ID }}
+        run: |
+          if [ -n "$FIREBASE_API_KEY" ] && [ -n "$FIREBASE_APPLICATION_ID" ] && [ -n "$FIREBASE_PROJECT_ID" ] && [ -n "$FIREBASE_WEB_CLIENT_ID" ]; then
+            {
+              printf 'firebaseApiKey=%s\n' "$FIREBASE_API_KEY"
+              printf 'firebaseApplicationId=%s\n' "$FIREBASE_APPLICATION_ID"
+              printf 'firebaseProjectId=%s\n' "$FIREBASE_PROJECT_ID"
+              printf 'firebaseWebClientId=%s\n' "$FIREBASE_WEB_CLIENT_ID"
+            } > native-android/local.properties
+            echo "Firebase client config supplied for this build."
+          else
+            echo "Firebase client config not fully supplied; building setup-mode APK."
+          fi
+
+      - name: Restore debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: member-globe-native-debug-keystore-v1
+
+      - name: Ensure debug signing key exists
+        run: |
+          mkdir -p "$HOME/.android"
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            keytool -genkeypair -v \
+              -keystore "$HOME/.android/debug.keystore" \
+              -storepass android -keypass android \
+              -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+      - name: Build debug APK
+        working-directory: native-android
+        run: gradle --no-daemon assembleDebug
+
+      - name: Verify APK signature
+        run: |
+          APK="native-android/app/build/outputs/apk/debug/app-debug.apk"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -n "$APKSIGNER"
+          CERT_OUTPUT="$("$APKSIGNER" verify --verbose --print-certs "$APK" 2>&1)"
+          printf '%s\n' "$CERT_OUTPUT"
+          SHA1="$(printf '%s\n' "$CERT_OUTPUT" | sed -n 's/.*certificate SHA-1 digest: //p' | head -n 1)"
+          SHA256="$(printf '%s\n' "$CERT_OUTPUT" | sed -n 's/.*certificate SHA-256 digest: //p' | head -n 1)"
+          {
+            echo "## Android APK signing certificate"
+            echo ""
+            echo "- Package name: com.memberglobe.nativeapp.test"
+            echo "- SHA-1: $SHA1"
+            echo "- SHA-256: $SHA256"
+            echo ""
+            echo "Register the SHA-1 under Firebase Console -> Project settings -> Your apps -> Android app."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: member-globe-firebase-debug-apk
+          path: native-android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f766e">
+  <title>Member Globe</title>
+  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">◎</span><div><strong>Member Globe</strong><small>Private member network</small></div></div>
+    <div id="user-chip" class="user-chip hidden"></div>
+  </header>
+  <main class="container">
+    <section id="setup-warning" class="notice warning hidden">
+      <h2>Firebase setup required</h2>
+      <p>Add your Firebase Web App configuration in <code>web/firebase-config.js</code>, then enable Google sign-in and create the Firestore database. Follow <a href="../FIREBASE_SETUP.md">the setup guide</a>.</p>
+    </section>
+    <section id="signed-out" class="auth-panel">
+      <div class="hero-icon">◎</div>
+      <p class="eyebrow">MEMBERS CONNECTED, SAFELY</p>
+      <h1>Your people, on one globe.</h1>
+      <p class="muted">Sign in with Google to request membership. An administrator must approve your account before member features and location sharing are available.</p>
+      <button id="google-sign-in" class="primary">Continue with Google</button>
+      <p id="auth-message" class="message" role="status"></p>
+      <p class="fine-print">Location is off by default. Your browser asks for permission only when you choose to share it.</p>
+    </section>
+    <section id="pending-panel" class="panel hidden">
+      <span class="status-pill pending">Pending admin review</span>
+      <h1>Thanks for registering.</h1>
+      <p>Your Google account is signed in, but an administrator must approve your membership before you can access the member globe.</p>
+      <p id="pending-email" class="muted"></p>
+      <button id="pending-sign-out" class="secondary">Sign out</button>
+    </section>
+    <section id="rejected-panel" class="panel hidden">
+      <span class="status-pill rejected">Membership not active</span>
+      <h1>Contact your administrator</h1>
+      <p>Your account is not currently approved. Please contact the Member Globe administrator if you believe this is a mistake.</p>
+      <button id="rejected-sign-out" class="secondary">Sign out</button>
+    </section>
+    <section id="app-panel" class="hidden">
+      <div class="welcome-row">
+        <div><p class="eyebrow">MEMBER DASHBOARD</p><h1 id="welcome-name">Welcome</h1><p class="muted">See approved members who have chosen to share their location.</p></div>
+        <button id="sign-out" class="secondary">Sign out</button>
+      </div>
+      <div class="dashboard-grid">
+        <section class="panel profile-panel">
+          <h2>Your profile</h2>
+          <label for="profile-name">Display name</label><input id="profile-name" maxlength="80" autocomplete="name">
+          <label for="profile-phone">Phone (optional)</label><input id="profile-phone" maxlength="30" autocomplete="tel" inputmode="tel">
+          <label for="profile-bio">About you (optional)</label><textarea id="profile-bio" maxlength="240" rows="3"></textarea>
+          <button id="save-profile" class="secondary">Save profile</button>
+          <p id="profile-message" class="message" role="status"></p>
+          <hr>
+          <h2>Location sharing</h2>
+          <p class="muted small">Off by default. When enabled, approved members can see your latest location on the map. Turn it off any time to remove the shared location.</p>
+          <label class="toggle-row"><input id="location-toggle" type="checkbox"><span>Share my current GPS location</span></label>
+          <p id="location-message" class="message" role="status"></p>
+        </section>
+        <section class="panel map-panel">
+          <div class="section-heading"><div><h2>Global member map</h2><p class="muted small">Only approved members who opted in appear here.</p></div><span id="member-count" class="count">0 sharing</span></div>
+          <div id="map" aria-label="Map of members sharing their location"></div>
+          <div id="map-message" class="message"></div>
+        </section>
+      </div>
+      <section id="admin-panel" class="panel hidden">
+        <div class="section-heading"><div><p class="eyebrow">ADMINISTRATION</p><h2>Membership requests</h2></div><span id="pending-count" class="count">0 pending</span></div>
+        <p class="muted small">Approve only people you recognize. Admin access must be granted manually in Firebase Console.</p>
+        <div id="pending-list" class="request-list"></div>
+      </section>
+    </section>
+  </main>
+  <footer>Member Globe · Share your location only with your consent.</footer>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
