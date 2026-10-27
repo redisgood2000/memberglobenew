@@ -879,6 +879,7 @@ private fun NativeAdminPanel(
     modifier: Modifier = Modifier,
     onBack: () -> Unit
 ) {
+    var pendingRejectUid by remember { mutableStateOf<String?>(null) }
     Scaffold(
         modifier = modifier,
         topBar = {
@@ -947,7 +948,7 @@ private fun NativeAdminPanel(
                                     modifier = Modifier.weight(1f)
                                 ) { Text("Approve") }
                                 OutlinedButton(
-                                    onClick = { activity.reviewMember(uid, false) },
+                                    onClick = { pendingRejectUid = uid },
                                     enabled = !activity.busy && uid.isNotBlank(),
                                     modifier = Modifier.weight(1f)
                                 ) { Text("Reject") }
@@ -959,6 +960,29 @@ private fun NativeAdminPanel(
             Spacer(Modifier.height(8.dp))
             OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Back to map") }
         }
+    }
+    val rejectedMemberName = activity.pendingMembers.firstOrNull {
+        it["documentId"]?.toString() == pendingRejectUid
+    }?.get("displayName")?.toString()?.ifBlank { "this member" } ?: "this member"
+    if (pendingRejectUid != null) {
+        AlertDialog(
+            onDismissRequest = { if (!activity.busy) pendingRejectUid = null },
+            title = { Text("Reject membership request?") },
+            text = { Text("Reject $rejectedMemberName? This account will not be able to use member features unless an admin changes its status.") },
+            confirmButton = {
+                TextButton(
+                    enabled = !activity.busy,
+                    onClick = {
+                        val uid = pendingRejectUid
+                        pendingRejectUid = null
+                        if (!uid.isNullOrBlank()) activity.reviewMember(uid, false)
+                    }
+                ) { Text("Reject request") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRejectUid = null }, enabled = !activity.busy) { Text("Cancel") }
+            }
+        )
     }
 }
 
