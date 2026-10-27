@@ -18,6 +18,9 @@ import androidx.compose.material.icons.filled.LocationOff
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -47,6 +50,7 @@ import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.messaging.FirebaseMessaging
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
@@ -80,6 +84,9 @@ class MainActivity : ComponentActivity() {
     private var memberListener: ListenerRegistration? = null
     private var locationsListener: ListenerRegistration? = null
     private var membersListener: ListenerRegistration? = null
+    private var chatListener: ListenerRegistration? = null
+    var chatMessages by mutableStateOf<List<Map<String, Any?>>>(emptyList())
+        private set
     private var mapListenersUid: String? = null
     private val locationClient by lazy { LocationServices.getFusedLocationProviderClient(this) }
 
@@ -117,6 +124,8 @@ class MainActivity : ComponentActivity() {
                 memberListener?.remove()
                 locationsListener?.remove()
                 membersListener?.remove()
+                chatListener?.remove()
+                chatMessages = emptyList()
                 memberListener = null
                 locationsListener = null
                 membersListener = null
@@ -131,6 +140,11 @@ class MainActivity : ComponentActivity() {
                 if (user != null) {
                     checkAdminAccess(user.uid)
                     ensureMemberProfile(user.uid)
+                    FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
+                        firestore?.collection("deviceTokens")?.document(user.uid)?.set(
+                            mapOf("uid" to user.uid, "token" to token, "updatedAt" to FieldValue.serverTimestamp())
+                        )
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -304,8 +318,15 @@ class MainActivity : ComponentActivity() {
                     return@addSnapshotListener
                 }
                 member = doc?.let { snapshotToMap(it) }
-                if (member?.get("status") == "approved") attachMapListeners(uid)
-                else detachMapListeners()
+                if (member?.get("status") == "approved") {
+                    attachMapListeners(uid)
+                    attachChatListener()
+                } else {
+                    detachMapListeners()
+                    chatListener?.remove()
+                    chatListener = null
+                    chatMessages = emptyList()
+                }
             }
         }.addOnFailureListener { e ->
             message = "Could not load member profile: ${e.message}. Check Firestore rules."
@@ -339,6 +360,38 @@ class MainActivity : ComponentActivity() {
                 }
                 approvedMembers = snapshot?.documents?.associate { it.id to snapshotToMap(it) } ?: emptyMap()
             }
+    }
+
+    private fun attachChatListener() {
+        if (chatListener != null) return
+        val db = firestore ?: return
+        chatListener = db.collection("groupMessages").orderBy("createdAt")
+            .limit(100).addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    message = "Group chat could not load: ${error.message}"
+                    return@addSnapshotListener
+                }
+                chatMessages = snapshot?.documents?.map { snapshotToMap(it) + ("documentId" to it.id) } ?: emptyList()
+            }
+    }
+
+    fun sendGroupMessage(text: String) {
+        val clean = text.trim()
+        val user = auth?.currentUser
+        val profile = member
+        val db = firestore
+        if (user == null || db == null || profile?.get("status") != "approved") {
+            message = "Only approved members can send group messages."
+            return
+        }
+        if (clean.isBlank() || clean.length > 2000) return
+        db.collection("groupMessages").add(mapOf(
+            "senderUid" to user.uid,
+            "senderName" to (profile["displayName"]?.toString()?.ifBlank { "Member" } ?: "Member"),
+            "senderPhotoURL" to (profile["photoURL"]?.toString() ?: ""),
+            "text" to clean,
+            "createdAt" to FieldValue.serverTimestamp()
+        )).addOnFailureListener { e -> message = "Message not sent: ${e.message}" }
     }
 
     private fun detachMapListeners() {
@@ -477,6 +530,7 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
     val overlayAlpha = 0.75f // Fixed at 25% transparency.
     var showProfile by remember { mutableStateOf(false) }
     var showMembersPanel by remember { mutableStateOf(false) }
+    var showChatPanel by remember { mutableStateOf(false) }
     var selectedMemberUid by remember { mutableStateOf<String?>(null) }
     var showAdminPanel by remember { mutableStateOf(false) }
     val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -540,6 +594,11 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
                         IconButton(onClick = { showMembersPanel = !showMembersPanel }) {
                             Icon(Icons.Default.Groups, contentDescription = "Open member list")
                         }
+                        IconButton(onClick = { showChatPanel = !showChatPanel }) {
+                            BadgedBox(badge = { if (activity.chatMessages.isNotEmpty()) Badge { Text(activity.chatMessages.size.coerceAtMost(99).toString()) } }) {
+                                Icon(Icons.Default.Chat, contentDescription = "Open group chat")
+                            }
+                        }
                         Box {
                             IconButton(onClick = { menuExpanded = true }) { Text("☰", style = MaterialTheme.typography.headlineSmall) }
                             DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
@@ -602,6 +661,14 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
                             Text("Membership: Approved", style = MaterialTheme.typography.labelMedium)
                         }
                     }
+                }
+
+                if (showChatPanel) {
+                    NativeGroupChatPanel(
+                        activity = activity,
+                        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(0.72f).padding(horizontal = 10.dp, vertical = 12.dp),
+                        onClose = { showChatPanel = false }
+                    )
                 }
 
                 if (showMembersPanel) {
