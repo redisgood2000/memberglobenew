@@ -642,12 +642,17 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
                         Icon(Icons.Default.Public, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp))
                         Column(Modifier.weight(1f)) {
                             Text("Member Globe", style = MaterialTheme.typography.titleMedium)
-                            Text("${activity.sharedLocations.size} member location(s) shared", style = MaterialTheme.typography.bodySmall)
-                            Text(gpsStatusText, style = MaterialTheme.typography.labelSmall,
-                                color = if (gpsStatusText.startsWith("Location stale")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         IconButton(onClick = { showMembersPanel = !showMembersPanel; if (showMembersPanel) { showChatPanel = false; showProfile = false } }) {
-                            Icon(Icons.Default.Groups, contentDescription = "Open member list")
+                            BadgedBox(badge = {
+                                if (activity.sharedLocations.isNotEmpty()) {
+                                    Badge(containerColor = Color(0xFFDC2626)) {
+                                        Text(activity.sharedLocations.size.coerceAtMost(99).toString())
+                                    }
+                                }
+                            }) {
+                                Icon(Icons.Default.Groups, contentDescription = "Open member list")
+                            }
                         }
                         IconButton(onClick = { showChatPanel = !showChatPanel; if (showChatPanel) { showMembersPanel = false; showProfile = false } }) {
                             BadgedBox(badge = { if (activity.chatMessages.isNotEmpty()) Badge { Text(activity.chatMessages.size.coerceAtMost(99).toString()) } }) {
