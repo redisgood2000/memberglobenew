@@ -53,6 +53,7 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.messaging.FirebaseMessaging
+import kotlinx.coroutines.delay
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
@@ -551,6 +552,24 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
     val user = activity.auth?.currentUser
     val member = activity.member
     val context = LocalContext.current
+    var nowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(15_000)
+            nowMillis = System.currentTimeMillis()
+        }
+    }
+    val currentUid = user?.uid
+    val ownLocation = activity.sharedLocations.firstOrNull { (it["uid"]?.toString() ?: it["documentId"]?.toString()) == currentUid }
+    val ownUpdatedAt = ownLocation?.get("updatedAt") as? com.google.firebase.Timestamp
+    val ownAgeSeconds = ownUpdatedAt?.let { ((nowMillis - it.toDate().time).coerceAtLeast(0L) / 1000L) }
+    val gpsStatusText = when {
+        member?.get("locationSharing") != true -> "GPS sharing off"
+        ownLocation == null || ownAgeSeconds == null -> "Waiting for GPS fix…"
+        ownAgeSeconds < 30 -> "Live · updated ${ownAgeSeconds}s ago"
+        ownAgeSeconds < 120 -> "Updating · ${ownAgeSeconds}s ago"
+        else -> "Location stale · ${ownAgeSeconds / 60} min ago"
+    }
     var menuExpanded by remember { mutableStateOf(false) }
     val overlayAlpha = 0.75f // Fixed at 25% transparency.
     var showProfile by remember { mutableStateOf(false) }
@@ -609,7 +628,7 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
                 )
 
                 Surface(
-                    modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                    modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp),
                     shape = MaterialTheme.shapes.extraLarge,
                     color = MaterialTheme.colorScheme.surface.copy(alpha = overlayAlpha),
                     tonalElevation = 5.dp,
@@ -624,6 +643,8 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
                         Column(Modifier.weight(1f)) {
                             Text("Member Globe", style = MaterialTheme.typography.titleMedium)
                             Text("${activity.sharedLocations.size} member location(s) shared", style = MaterialTheme.typography.bodySmall)
+                            Text(gpsStatusText, style = MaterialTheme.typography.labelSmall,
+                                color = if (gpsStatusText.startsWith("Location stale")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         IconButton(onClick = { showMembersPanel = !showMembersPanel; if (showMembersPanel) { showChatPanel = false; showProfile = false } }) {
                             Icon(Icons.Default.Groups, contentDescription = "Open member list")
@@ -671,7 +692,7 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
                                 else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
                             }
                         },
-                        modifier = Modifier.align(Alignment.BottomEnd).padding(18.dp).size(54.dp),
+                        modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(18.dp).size(54.dp),
                         containerColor = if (isSharingLocation) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
                         contentColor = if (isSharingLocation) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
                         elevation = FloatingActionButtonDefaults.elevation(6.dp)
@@ -703,7 +724,7 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
                 if (showChatPanel) {
                     NativeGroupChatPanel(
                         activity = activity,
-                        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(0.72f).padding(horizontal = 10.dp, vertical = 12.dp).imePadding(),
+                        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(0.72f).navigationBarsPadding().padding(horizontal = 10.dp, vertical = 12.dp).imePadding(),
                         onClose = { showChatPanel = false }
                     )
                 }
