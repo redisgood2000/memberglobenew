@@ -10,52 +10,52 @@ exports.notifyGroupChat = onDocumentCreated(
   async (event) => {
     const message = event.data?.data();
     if (!message || typeof message.text !== "string" || !message.senderUid) return;
+
     const db = getFirestore();
-    const [tokenSnapshot, approvedSnapshot] = await Promise.all([
-      db.collection("deviceTokens").get(),
-      db.collection("members").where("status", "==", "approved").get(),
-    ]);
-    const approvedUids = new Set(approvedSnapshot.docs.map((doc) => doc.id));
-    const eligibleTokenDocs = tokenSnapshot.docs.filter(
-      (doc) => doc.id !== message.senderUid && approvedUids.has(doc.id)
-    );
-    const tokens = eligibleTokenDocs
-      .map((doc) => doc.data().token)
-      .filter((token) => typeof token === "string" && token.length > 0);
-    if (!tokens.length) return;
+    const membersSnapshot = await db.collection("members")
+      .where("status", "==", "approved").get();
 
-    const body = message.text.length > 140
-      ? message.text.slice(0, 137) + "..."
-      : message.text;
-    const result = await getMessaging().sendEachForMulticast({
-      tokens,
-      notification: {
-        title: message.senderName || "Member Globe",
-        body,
-      },
-      data: {
-        type: "group_chat",
-        messageId: event.params.messageId,
-        senderUid: String(message.senderUid),
-        title: message.senderName || "Member Globe",
-        body,
-      },
-      android: { priority: "high", notification: { channelId: "member_globe_group_chat" } },
-    });
+    const tokens = [];
+    for (const memberDoc of membersSnapshot.docs) {
+      if (memberDoc.id === message.senderUid) continue;
+      const tokenDoc = await db.collection("deviceTokens").doc(memberDoc.id).get();
+      const token = tokenDoc.exists ? tokenDoc.get("token") : null;
+      if (typeof token === "string" && token.length > 0) tokens.push(token);
+    }
 
-    const invalid = [];
-    result.responses.forEach((response, index) => {
-      if (!response.success && [
-        "messaging/invalid-registration-token",
-        "messaging/registration-token-not-registered",
-      ].includes(response.error?.code)) invalid.push(tokens[index]);
-    });
-    if (invalid.length) {
-      const batch = db.batch();
-      eligibleTokenDocs.forEach((doc) => {
-        if (invalid.includes(doc.data().token)) batch.delete(doc.ref);
+    if (tokens.length === 0) return;
+    const senderName = String(message.senderName || "Member").slice(0, 80);
+    const body = String(message.text).replace(/\\s+/g, " ").slice(0, 180);
+    for (let offset = 0; offset < tokens.length; offset += 500) {
+      const batch = tokens.slice(offset, offset + 500);
+      const response = await getMessaging().sendEachForMulticast({
+        tokens: batch,
+        notification: {
+          title: senderName + " · Member Globe",
+          body
+        },
+        data: {
+          type: "group_chat",
+          senderUid: String(message.senderUid),
+          senderName,
+          body
+        },
+        android: { priority: "high", notification: { channelId: "member_globe_chat" } }
       });
-      await batch.commit();
+      const invalid = [];
+      response.responses.forEach((result, index) => {
+        if (!result.success && result.error &&
+            ["messaging/registration-token-not-registered", "messaging/invalid-registration-token"].includes(result.error.code)) {
+          invalid.push(batch[index]);
+        }
+      });
+      if (invalid.length) {
+        const tokenDocs = await db.collection("deviceTokens").get();
+        const deletions = tokenDocs.docs
+          .filter(doc => invalid.includes(doc.get("token")))
+          .map(doc => doc.ref.delete());
+        await Promise.all(deletions);
+      }
     }
   }
 );
