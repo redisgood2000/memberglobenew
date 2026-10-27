@@ -815,6 +815,104 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+
+@Composable
+private fun NativeGroupChatPanel(
+    activity: MainActivity,
+    modifier: Modifier = Modifier,
+    onClose: () -> Unit
+) {
+    var draft by remember { mutableStateOf("") }
+    val userUid = activity.auth?.currentUser?.uid.orEmpty()
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    LaunchedEffect(activity.chatMessages.size, activity.chatMessages.lastOrNull()?.get("documentId")) {
+        if (activity.chatMessages.isNotEmpty()) listState.animateScrollToItem(activity.chatMessages.lastIndex)
+    }
+    Surface(
+        modifier = modifier,
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+        tonalElevation = 10.dp,
+        shadowElevation = 10.dp
+    ) {
+        Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Chat, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Member Globe Chat", style = MaterialTheme.typography.titleLarge)
+                    Text("Group conversation · approved members", style = MaterialTheme.typography.bodySmall)
+                }
+                IconButton(onClick = onClose) { Text("✕") }
+            }
+            HorizontalDivider()
+            if (activity.chatMessages.isEmpty()) {
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Text("No messages yet. Say hello! 👋", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else {
+                androidx.compose.foundation.lazy.LazyColumn(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    state = listState,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(activity.chatMessages.size) { index ->
+                        val item = activity.chatMessages[index]
+                        val mine = item["senderUid"]?.toString() == userUid
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
+                            verticalAlignment = Alignment.Bottom) {
+                            if (!mine) {
+                                val avatar = item["senderPhotoURL"]?.toString().orEmpty()
+                                if (avatar.isNotBlank()) AsyncImage(
+                                    model = avatar, contentDescription = "Sender photo",
+                                    modifier = Modifier.padding(end = 6.dp).size(30.dp).clip(CircleShape),
+                                    contentScale = ContentScale.Crop
+                                ) else Icon(Icons.Default.AccountCircle, contentDescription = null,
+                                    modifier = Modifier.padding(end = 6.dp).size(30.dp))
+                            }
+                            Column(Modifier.widthIn(max = 280.dp)) {
+                                if (!mine) Text(item["senderName"]?.toString() ?: "Member",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Surface(
+                                    shape = MaterialTheme.shapes.large,
+                                    color = if (mine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+                                ) {
+                                    Text(item["text"]?.toString().orEmpty(),
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                                        color = if (mine) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                                        style = MaterialTheme.typography.bodyMedium)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = draft,
+                    onValueChange = { if (it.length <= 2000) draft = it },
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("Message…") },
+                    maxLines = 4,
+                    shape = MaterialTheme.shapes.extraLarge
+                )
+                IconButton(
+                    onClick = {
+                        val outgoing = draft.trim()
+                        if (outgoing.isNotEmpty()) {
+                            activity.sendGroupMessage(outgoing)
+                            draft = ""
+                        }
+                    },
+                    enabled = draft.isNotBlank()
+                ) { Icon(Icons.Default.Chat, contentDescription = "Send message", tint = MaterialTheme.colorScheme.primary) }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 private fun NativeAdminPanel(
     activity: MainActivity,
     modifier: Modifier = Modifier,
