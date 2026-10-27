@@ -30,8 +30,8 @@ android {
         applicationId = "com.memberglobe.nativeapp.test"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "0.7.0"
+        versionCode = 8
+        versionName = "0.8.0"
         buildConfigField("String", "FIREBASE_API_KEY", buildConfigString(firebaseValue("firebaseApiKey")))
         buildConfigField("String", "FIREBASE_APPLICATION_ID", buildConfigString(firebaseValue("firebaseApplicationId")))
         buildConfigField("String", "FIREBASE_PROJECT_ID", buildConfigString(firebaseValue("firebaseProjectId")))
