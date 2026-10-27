@@ -3,6 +3,7 @@ package com.memberglobe.nativeapp
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,6 +30,10 @@ fun NativeGroupChatPanel(
 ) {
     var draft by remember { mutableStateOf("") }
     val myUid = activity.auth?.currentUser?.uid.orEmpty()
+    val listState = rememberLazyListState()
+    LaunchedEffect(activity.chatMessages.size) {
+        if (activity.chatMessages.isNotEmpty()) listState.animateScrollToItem(activity.chatMessages.lastIndex)
+    }
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(24.dp),
@@ -52,6 +57,7 @@ fun NativeGroupChatPanel(
                 }
             } else {
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                     contentPadding = PaddingValues(vertical = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -98,7 +104,18 @@ fun NativeGroupChatPanel(
                     }
                 }
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                listOf("😊", "❤️", "👍", "😂", "🎉", "👋").forEach { emoji ->
+                    TextButton(onClick = { if (draft.length < 1998) draft += emoji }, contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp)) {
+                        Text(emoji, style = MaterialTheme.typography.titleMedium)
+                    }
+                }
+            }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = draft,
