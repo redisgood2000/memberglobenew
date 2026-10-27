@@ -226,14 +226,16 @@ class MainActivity : ComponentActivity() {
                             pendingMembers = pending?.documents?.map { snapshotToMap(it) + ("documentId" to it.id) } ?: emptyList()
                         }
                 } else {
-                    pendingRequestsError = "Admin access is not configured for this Google account. Create admins/$uid in Firestore, then reopen the app."
-                    message = pendingRequestsError
+                    // Most signed-in users are members, not admins. Missing an admins/{uid}
+                    // document is normal and must not be shown as an app-wide error.
+                    pendingRequestsError = ""
                 }
             }
             .addOnFailureListener { e ->
                 isAdmin = false
+                // Keep admin-configuration diagnostics out of the member screen.
+                // If an actual admin cannot open the admin panel, surface this in the admin UI.
                 pendingRequestsError = "Admin access check failed: ${e.message ?: "Firestore permission or network error"}"
-                message = pendingRequestsError
             }
     }
 
