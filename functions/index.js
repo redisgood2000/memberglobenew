@@ -25,7 +25,7 @@ exports.notifyGroupChat = onDocumentCreated(
 
     if (tokens.length === 0) return;
     const senderName = String(message.senderName || "Member").slice(0, 80);
-    const body = String(message.text).replace(/\\s+/g, " ").slice(0, 180);
+    const body = String(message.text).replace(/\s+/g, " ").slice(0, 180);
     for (let offset = 0; offset < tokens.length; offset += 500) {
       const batch = tokens.slice(offset, offset + 500);
       const response = await getMessaging().sendEachForMulticast({
