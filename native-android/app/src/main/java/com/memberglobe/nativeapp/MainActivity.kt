@@ -656,21 +656,31 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
                         }
                         Box {
                             IconButton(onClick = { menuExpanded = true }) { Text("☰", style = MaterialTheme.typography.headlineSmall) }
-                            DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                            DropdownMenu(
+                                expanded = menuExpanded,
+                                onDismissRequest = { menuExpanded = false },
+                                modifier = Modifier.widthIn(min = 190.dp, max = 220.dp)
+                            ) {
                                 DropdownMenuItem(
-                                    text = { Text("My profile · $displayName") },
+                                    modifier = Modifier.heightIn(min = 40.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
+                                    text = { Text("My profile · $displayName", style = MaterialTheme.typography.bodyMedium, maxLines = 1) },
                                     onClick = { menuExpanded = false; showProfile = !showProfile },
                                     leadingIcon = { Icon(Icons.Default.AccountCircle, contentDescription = null) }
                                 )
                                 HorizontalDivider()
                                 if (activity.isAdmin) {
                                     DropdownMenuItem(
-                                        text = { Text("Native admin panel (${activity.pendingMembers.size} pending)") },
+                                        modifier = Modifier.heightIn(min = 40.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
+                                    text = { Text("Admin panel · ${activity.pendingMembers.size} pending", style = MaterialTheme.typography.bodyMedium, maxLines = 1) },
                                         onClick = { menuExpanded = false; showAdminPanel = true }
                                     )
                                 }
                                 DropdownMenuItem(
-                                    text = { Text("Sign out") },
+                                    modifier = Modifier.heightIn(min = 40.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
+                                    text = { Text("Sign out", style = MaterialTheme.typography.bodyMedium, maxLines = 1) },
                                     onClick = { menuExpanded = false; activity.signOutMember() }
                                 )
                             }
