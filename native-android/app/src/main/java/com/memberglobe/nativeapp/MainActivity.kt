@@ -30,6 +30,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
+import coil.ImageLoader
+import coil.request.ImageRequest
+import coil.transform.CircleCropTransformation
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
@@ -876,6 +879,24 @@ private fun NativeMemberMap(
                     setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                 }
                 map.overlays.add(marker)
+
+                // Replace the standard map pin with this member's Google profile photo.
+                val photoUrl = profile?.get("photoURL")?.toString().orEmpty()
+                if (photoUrl.startsWith("https://") || photoUrl.startsWith("http://")) {
+                    val request = ImageRequest.Builder(context)
+                        .data(photoUrl)
+                        .size(120)
+                        .transformations(CircleCropTransformation())
+                        .target(
+                            onSuccess = { drawable ->
+                                marker.icon = drawable
+                                marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                                map.invalidate()
+                            }
+                        )
+                        .build()
+                    ImageLoader(context).enqueue(request)
+                }
             }
             map.invalidate()
             if (selectedMemberUid != null) {
