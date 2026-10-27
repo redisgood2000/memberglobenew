@@ -827,8 +827,6 @@ private fun MemberGlobeNativeScreen(activity: MainActivity) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-
-@Composable
 private fun NativeGroupChatPanel(
     activity: MainActivity,
     modifier: Modifier = Modifier,
@@ -925,6 +923,7 @@ private fun NativeGroupChatPanel(
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun NativeAdminPanel(
     activity: MainActivity,
     modifier: Modifier = Modifier,
