@@ -11,9 +11,15 @@ exports.notifyGroupChat = onDocumentCreated(
     const message = event.data?.data();
     if (!message || typeof message.text !== "string" || !message.senderUid) return;
     const db = getFirestore();
-    const tokenSnapshot = await db.collection("deviceTokens").get();
-    const tokens = tokenSnapshot.docs
-      .filter((doc) => doc.id !== message.senderUid)
+    const [tokenSnapshot, approvedSnapshot] = await Promise.all([
+      db.collection("deviceTokens").get(),
+      db.collection("members").where("status", "==", "approved").get(),
+    ]);
+    const approvedUids = new Set(approvedSnapshot.docs.map((doc) => doc.id));
+    const eligibleTokenDocs = tokenSnapshot.docs.filter(
+      (doc) => doc.id !== message.senderUid && approvedUids.has(doc.id)
+    );
+    const tokens = eligibleTokenDocs
       .map((doc) => doc.data().token)
       .filter((token) => typeof token === "string" && token.length > 0);
     if (!tokens.length) return;
@@ -46,7 +52,7 @@ exports.notifyGroupChat = onDocumentCreated(
     });
     if (invalid.length) {
       const batch = db.batch();
-      tokenSnapshot.docs.forEach((doc) => {
+      eligibleTokenDocs.forEach((doc) => {
         if (invalid.includes(doc.data().token)) batch.delete(doc.ref);
       });
       await batch.commit();
