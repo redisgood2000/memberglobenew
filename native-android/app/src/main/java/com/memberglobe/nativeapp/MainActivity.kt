@@ -326,7 +326,9 @@ class MainActivity : ComponentActivity() {
                 if (member?.get("status") == "approved") {
                     attachMapListeners(uid)
                     attachChatListener()
+                    if (member?.get("locationSharing") == true) startLocationTrackingService(uid)
                 } else {
+                    stopLocationTrackingService()
                     detachMapListeners()
                     chatListener?.remove()
                     chatListener = null
@@ -445,6 +447,7 @@ class MainActivity : ComponentActivity() {
         memberListener = null
         detachMapListeners()
         member = null
+        stopLocationTrackingService()
         auth?.signOut()
         GoogleSignIn.getClient(this, GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).build()).signOut()
         message = "Signed out."
@@ -468,6 +471,7 @@ class MainActivity : ComponentActivity() {
         db.collection("members").document(user.uid).update(
             mapOf("locationSharing" to true, "updatedAt" to FieldValue.serverTimestamp())
         ).addOnSuccessListener {
+            startLocationTrackingService(user.uid)
             locationClient.getCurrentLocation(
                 if (fine) Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY,
                 CancellationTokenSource().token
@@ -507,6 +511,7 @@ class MainActivity : ComponentActivity() {
     fun stopLocationSharing() {
         val user = auth?.currentUser ?: return
         val db = firestore ?: return
+        stopLocationTrackingService()
         busy = true
         db.collection("members").document(user.uid).update(
             mapOf("locationSharing" to false, "updatedAt" to FieldValue.serverTimestamp())
