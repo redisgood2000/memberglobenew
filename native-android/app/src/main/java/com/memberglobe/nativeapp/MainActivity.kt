@@ -453,6 +453,21 @@ class MainActivity : ComponentActivity() {
         message = "Signed out."
     }
 
+    private fun startLocationTrackingService(uid: String) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) return
+        try {
+            val intent = Intent(this, MemberLocationService::class.java).putExtra(MemberLocationService.EXTRA_UID, uid)
+            ContextCompat.startForegroundService(this, intent)
+        } catch (e: Exception) {
+            message = "Could not start live GPS tracking: ${e.message ?: "Android restricted the location service"}"
+        }
+    }
+
+    private fun stopLocationTrackingService() {
+        try { stopService(Intent(this, MemberLocationService::class.java)) } catch (_: Exception) { }
+    }
+
     fun shareCurrentLocation() {
         val user = auth?.currentUser ?: return
         val db = firestore ?: return
